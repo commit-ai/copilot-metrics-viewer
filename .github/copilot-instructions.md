@@ -16,15 +16,15 @@ Always reference these instructions first and fallback to search or bash command
 ## Security and Boundaries
 
 ### Critical Rules
-- **NEVER commit secrets or credentials** to the repository
-- **NEVER modify `.env` file** - environment variables should only be documented, not changed
-- **DO NOT modify** the following without explicit approval:
+- **NEVER commit secrets or credentials** to the repository (because they can be extracted from git history and abused)
+- **NEVER modify `.env` file** - environment variables should only be documented, not changed (to prevent accidental commits of sensitive data)
+- **DO NOT modify** the following without explicit approval (to prevent breaking CI/CD, security policies, and production configuration):
   - Production configuration files (azure.yaml, Dockerfile)
   - GitHub workflows in `.github/workflows/`
   - Security policies (SECURITY.md, CODE_OF_CONDUCT.md)
   - License files (LICENSE.txt)
-- **ALWAYS validate** that changes don't introduce security vulnerabilities
-- **ALWAYS run security scanning** before finalizing changes
+- **ALWAYS validate** that changes don't introduce security vulnerabilities (to catch issues before they reach production)
+- **ALWAYS run security scanning** before finalizing changes (to ensure no secrets or weak patterns are committed)
 
 ### Safe Modification Areas
 - Application source code in `app/`, `server/`, `shared/`
@@ -35,10 +35,10 @@ Always reference these instructions first and fallback to search or bash command
 ## Working Effectively
 
 ### Initial Setup
-- **Node.js requirement**: Uses Node.js 20+ (verified: v20.19.4 works)
+- **Node.js requirement**: Uses Node.js 20+ (verified: v20.19.4 works) — pinning the version prevents toolchain drift that breaks builds on other machines
 - Install dependencies: `npm install` 
-  - **NEVER CANCEL**: Takes 3 minutes to complete. Set timeout to 5+ minutes.
-  - Includes postinstall script that runs `nuxt prepare`
+  - **NEVER CANCEL**: Takes 3 minutes to complete. Set timeout to 5+ minutes. (to ensure all transitive dependencies are installed and postinstall scripts run)
+  - Includes postinstall script that runs `nuxt prepare` (this generates TypeScript types needed by the editor and build)
 
 ### Build and Development
 - **Development server**: `npm run dev`
@@ -56,16 +56,15 @@ Always reference these instructions first and fallback to search or bash command
 
 ### Testing
 - **Unit tests**: `npm test` (using Vitest)
-  - **NEVER CANCEL**: Takes 15 seconds to complete. Set timeout to 2+ minutes.
-  - Runs 97 tests, all should pass
-  - Uses mocked data environment
+  - **NEVER CANCEL**: Takes 15 seconds to complete. Set timeout to 2+ minutes. (to ensure all test files are discovered and executed without race conditions)
+  - Runs 97 tests, all should pass (if any fail, the code has a regression or is incomplete)
+  - Uses mocked data environment (to avoid needing real GitHub tokens during development)
   - Test files are located in `tests/` directory
 - **E2E tests**: `npm run test:e2e` (using Playwright)
-  - **NOTE**: Playwright browser installation may fail in some environments due to download issues
-  - Install browsers first: `npx playwright install` 
-  - Uses mocked data for testing
+  - **NOTE**: Playwright browser installation may fail in some environments due to download issues (try `npx playwright install` first if tests fail)
+  - Uses mocked data for testing (to keep E2E tests fast and reproducible)
 - **Type checking**: `npm run typecheck`
-  - **KNOWN ISSUE**: Currently fails with 18 TypeScript errors
+  - **KNOWN ISSUE**: Currently fails with 18 TypeScript errors (these are in existing code; fix only if your change introduces new errors)
   - Takes 10 seconds to complete
   - Errors are in existing codebase, not blocking for development
 
@@ -198,7 +197,7 @@ The CI release workflow **hard-fails** if the git tag does not match `package.js
   - Keep components focused and single-purpose
   - Extract reusable logic into composables or utilities
   - Use TypeScript interfaces for data models in `app/model/`
-- **Comments**: Add comments only when necessary to explain complex logic
+- **Comments**: Mark deliberate shortcuts with `// ponytail:` comments to track technical debt (e.g., `// ponytail: global lock, per-account locks if throughput matters`)
 - **Error Handling**: Always handle errors gracefully with user-friendly messages
 
 ### Repo Structure
@@ -246,3 +245,49 @@ The CI release workflow **hard-fails** if the git tag does not match `package.js
 - **Font providers**: External font API calls fail in restricted networks (non-blocking)
 
 Always validate your changes work in mock mode first, then test with real GitHub data if available.
+
+## Overview
+
+**GitHub Copilot Metrics Viewer** is a Nuxt 3 web application that displays GitHub Copilot usage metrics and analytics for organizations and enterprises. Key capabilities:
+
+- View Copilot seat usage, adoption, and language breakdowns
+- Filter by organization, enterprise, or team scope
+- Analyze chat and completions metrics over time
+- Support both mock data (development) and real GitHub API integration
+- Deploy to Azure Container Instances or Kubernetes with OAuth support
+
+The app is designed for DevOps, platform engineering, and enterprise administrators who need visibility into Copilot adoption and usage patterns.
+
+## Tech Stack
+
+- **Frontend**: Vue.js 3 (Composition API), TypeScript, Vuetify 3, Chart.js
+- **Backend**: Nuxt 3 server middleware, Node.js 20+, undici HTTP client
+- **Testing**: Vitest (unit tests), Playwright (end-to-end)
+- **Styling**: SCSS with Vuetify components
+- **Data**: GitHub Copilot Metrics API (REST), PostgreSQL (optional persistence)
+- **Deployment**: Docker, Azure Container Instances, Kubernetes, nginx
+- **Auth**: GitHub OAuth via nuxt-auth-utils, Microsoft MSAL (optional)
+
+## Resources
+
+- **GitHub Copilot Metrics API**: https://docs.github.com/en/rest/copilot/copilot-metrics
+- **Nuxt 3 Documentation**: https://nuxt.com/docs/
+- **Vue 3 Composition API**: https://vuejs.org/guide/extras/composition-api-faq.html
+- **Vuetify Components**: https://vuetifyjs.com/
+- **Chart.js**: https://www.chartjs.org/docs/latest/
+- **Vitest**: https://vitest.dev/
+- **Contributing**: See [CONTRIBUTING.md](../CONTRIBUTING.md)
+- **Security**: See [SECURITY.md](../SECURITY.md)
+- **Deployment**: See [DEPLOYMENT.md](../DEPLOYMENT.md)
+
+## Evidence for Claims
+
+When you claim a fix, feature, or change works — always show evidence from a tool run. Examples:
+
+- **"Tests pass"** → paste the `npm test` output showing "✓ 97 passed"
+- **"Build succeeds"** → paste the `npm run build` output showing no errors
+- **"Health endpoints respond"** → paste the `curl` output for `/api/health`, `/api/ready`, `/api/live`
+- **"Component renders"** → screenshot from `npm run dev` browser session or E2E test output
+- **"No new lint errors"** → paste relevant lines from `npm run lint` output
+
+Empty claims ("it works") are unverifiable; pasted output turns claims into facts.
