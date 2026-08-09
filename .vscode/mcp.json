@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "@modelcontextprotocol/server-filesystem",
-        "/Users/yoelf/workspace/copilot-metrics-viewer.worktrees/update-repo-audit-instructions"
+        "${workspaceFolder}"
       ],
       "disabled": false
     }

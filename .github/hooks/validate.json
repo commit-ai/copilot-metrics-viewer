@@ -16,7 +16,7 @@
       "name": "Lint Report",
       "command": "npm run lint",
       "enforce": false,
-      "description": "Report lint errors; existing errors are acceptable, but do not introduce new ones"
+      "description": "Report lint errors only; the repo has known baseline lint failures, so review touched-file regressions without blocking every change"
     }
   ]
 }

@@ -11,11 +11,11 @@ Use this prompt to validate code changes are ready to commit.
 
 1. `npm run build` — must succeed with no new errors
 2. `npm test` — must show "97 passed"
-3. `npm run lint` — report any new errors (existing errors are acceptable)
+3. `npm run lint` — review touched-file regressions only (the repo has existing baseline lint failures)
 
 **Then report:**
-- ✅ All three commands succeeded → ready to commit
-- ❌ Any command failed → show error, do not commit
-- ⚠️ New lint errors → fix before commit (use `npm run lint:fix` for formatting only)
+- ✅ Build and tests succeeded, and lint output shows no new touched-file regressions → ready to commit
+- ❌ Build or tests failed → show error, do not commit
+- ⚠️ Lint still reports the repo's known baseline failures; only fix new issues introduced by the change (use `npm run lint:fix` for formatting only)
 
 **Evidence required:** Paste full terminal output showing command completion.
