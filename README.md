@@ -71,8 +71,55 @@ Select **one team** for a full deep-dive view with KPI tiles, time-series charts
   <img width="800" alt="Teams Comparison" src="./images/teams-comparison.png">
 </p>
 
-#### Team-Scoped Direct URLs
+#### Team AI Contribution & Adoption Metrics
 
+Both the deep-dive and comparison views include team-level AI contribution and adoption reporting.
+
+**AI contribution scorecards** — per team: AI lines of code, AI LOC per person, agent share of AI LOC, Copilot / agent / CLI adoption, and VS Code agent users.
+
+**Team leaderboard** — ranks the selected teams by AI LOC per person, with a trend arrow comparing the later half of the selected range against the earlier half.
+
+**Adoption heatmap** — weekly adoption percentage per team, with a summary naming the highest- and lowest-adoption teams.
+
+**Weekly merged pull requests** — an on-demand panel (single-team view) showing weekly merged PR counts, the count with an AI contribution, and a rolling weekly average.
+
+All comparison metrics are expressed as percentages or per-person figures so that teams of different sizes are directly comparable.
+
+##### Data sources, calculations and assumptions
+
+| Metric | Source | Calculation |
+| --- | --- | --- |
+| AI lines of code | `loc_added_sum` from the Copilot usage report | Summed over the selected range |
+| AI LOC per person | As above ÷ team member count | Member count comes from the GitHub Teams API |
+| Agent share of AI LOC | `totals_by_feature` for `chat_panel_agent_mode` and `agent_edit` | Agent LOC ÷ total AI LOC |
+| Acceptance rate | `code_acceptance_activity_count` ÷ `code_generation_activity_count` | Weighted across the range, not a mean of daily rates |
+| Copilot / agent / CLI / VS Code agent adoption | Rolling distinct-user windows computed server-side | Distinct users ÷ team member count |
+| Editor & model usage | `totals_by_ide` / `totals_by_model_feature` | Share of each team's own interactions |
+| Merged & AI-touched PRs | GitHub **search** API (on demand) | See below |
+
+Assumptions worth knowing:
+
+- **"% of total LOC attributed to AI" means share of Copilot-tracked LOC.** The Copilot API reports no human-authored line counts, so there is no denominator for a true "all code written by the team" percentage. The dashboard reports the agent share of Copilot's *own* output instead.
+- **Adoption denominators are current team members**, not licensed seats. A team whose member count cannot be resolved shows an em dash rather than a misleading zero.
+- **Adoption percentages saturate at 100%.** Rolling windows count everyone active during the window, including people who have since left the team, so the raw ratio can exceed the current member count.
+- **Adoption numerators come from rolling windows** (7-day for ranges up to a week, 28-day otherwise), read from the last day in range. Per-day report rows expose active-user *counts*, never identities, so distinct users across an arbitrary range cannot be recomputed on the client — and exposing identities would conflict with the per-user privacy gate.
+- **Trends compare the later half of the selected range against the earlier half**, not a separately fetched preceding period. This avoids doubling every team's API cost and is labelled as such in the UI.
+- **VS Code agents-window usage is an approximation.** The API exposes `totals_by_ide` and `totals_by_feature` separately with no IDE × feature cross-product, so a user counts when they have a VS Code entry *and* agent usage on the same day.
+- **Weeks start on Monday.** Partial weeks at either end of the range are flagged in the PR chart and excluded from the rolling average.
+
+##### Pull request data and rate limits
+
+GitHub's Copilot metrics API reports pull request totals only for whole organizations and enterprises, never for teams. Upstream approaches that copy org-wide totals into a team's rows mislabel org numbers as team numbers, so this dashboard instead queries the GitHub **search** API for the team's members.
+
+- A PR counts as **AI-touched** when it was authored by the Copilot coding agent or reviewed by Copilot code review.
+- Member logins are chunked to stay under the search API's 256-character query limit, and all weeks and chunks are batched into a single GraphQL request using aliases.
+- Because search is rate limited, the panel loads **only when you click "Load PR data"**, and results are cached per team and date range (in PostgreSQL when `DATABASE_URL` is set, otherwise in memory for an hour).
+- If GitHub rate limits the request, the panel reports how many minutes to wait before retrying rather than failing silently.
+
+> [!NOTE]
+> In mock mode `getMetricsDataV2` returns organization-level data for team requests, so mock teams share the same underlying metric values while their member counts differ. Per-person and adoption figures therefore vary between mock teams even though the absolute totals do not.
+
+#### Team-Scoped Direct URLs
 You can link directly to a fully team-scoped dashboard — every tab (IDE metrics, chat, agents, languages, etc.) will automatically filter to that team's members only. A blue banner at the top of the page confirms the active scope and provides a quick link back to the organization view.
 
 ```

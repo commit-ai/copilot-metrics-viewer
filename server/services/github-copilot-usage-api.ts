@@ -58,6 +58,21 @@ export interface ReportDayTotals {
   pull_requests?: ReportPullRequests;
   daily_active_cli_users?: number;
   totals_by_cli?: ReportCliTotals;
+  /**
+   * Rolling distinct-user windows computed for team-scoped reports by
+   * {@link ../services/user-metrics-aggregator.aggregateTeamMetrics}. GitHub's
+   * org/enterprise reports do not supply these, so they are optional and
+   * absent outside team scope.
+   *
+   * A "vscode agent" user is an approximation: the API exposes `totals_by_ide`
+   * and `totals_by_feature` separately with no IDE x feature cross-product, so
+   * it means a user with a `vscode` IDE entry who also used an agent that day.
+   */
+  weekly_active_agent_users?: number;
+  weekly_active_cli_users?: number;
+  monthly_active_cli_users?: number;
+  weekly_active_vscode_agent_users?: number;
+  monthly_active_vscode_agent_users?: number;
 }
 
 export interface ReportPullRequests {
