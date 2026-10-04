@@ -35,7 +35,7 @@
         <v-row class="mb-2">
           <v-col v-for="kpi in kpis" :key="kpi.label" cols="6" md="3">
             <div class="text-caption text-medium-emphasis">{{ kpi.label }}</div>
-            <div class="text-h6">{{ kpi.value }}</div>
+            <div class="text-h6" :data-testid="kpi.label === 'Merged PRs' ? 'team-pr-merged-total' : undefined">{{ kpi.value }}</div>
           </v-col>
         </v-row>
 
@@ -43,7 +43,9 @@
           <div v-for="warning in warnings" :key="warning">{{ warning }}</div>
         </v-alert>
 
-        <Bar v-if="chartData.labels?.length" :data="chartData" :options="chartOptions" :height="220" />
+        <div v-if="chartData.labels?.length" style="position: relative; height: 240px; min-width: 0;">
+          <Bar :data="chartData" :options="chartOptions" />
+        </div>
         <p v-else class="text-medium-emphasis text-center py-4">No merged pull requests in this range.</p>
       </template>
     </v-card-text>
@@ -71,8 +73,12 @@ export default defineComponent({
     params: { type: Object as PropType<Record<string, unknown>>, required: true },
     teamName: { type: String, default: '' },
   },
-  setup(props) {
+  emits: {
+    metrics: (_metrics: TeamPrMetrics | null) => true,
+  },
+  setup(props, { emit }) {
     const metrics = ref<TeamPrMetrics | null>(null);
+    watch(metrics, value => emit('metrics', value), { immediate: true });
     const loading = ref(false);
     const error = ref('');
     const rateLimited = ref(false);
@@ -89,6 +95,7 @@ export default defineComponent({
     const load = async () => {
       const version = ++requestVersion;
       loading.value = true;
+      metrics.value = null;
       error.value = '';
       rateLimited.value = false;
       try {
@@ -115,7 +122,7 @@ export default defineComponent({
       if (!data) return [];
       const aiSharePct = data.totalMerged > 0 ? (data.totalAiTouched / data.totalMerged) * 100 : 0;
       return [
-        { label: 'Merged PRs', value: data.totalMerged.toLocaleString() },
+        { label: 'Merged PRs', value: `${data.truncated ? '≥ ' : ''}${data.totalMerged.toLocaleString()}` },
         { label: 'With AI contribution', value: `${data.totalAiTouched.toLocaleString()} (${aiSharePct.toFixed(0)}%)` },
         { label: 'Weekly average', value: data.rollingAverage.toFixed(1) },
         {
@@ -136,7 +143,7 @@ export default defineComponent({
         notes.push('No organization could be determined, so results are not limited to this organization\'s repositories.');
       }
       if (data.weeks.some(week => week.partial)) {
-        notes.push('Striped bars are partial weeks clipped by the date range; they are excluded from the weekly average.');
+        notes.push('Partial weeks are marked in chart tooltips and excluded from the weekly average when complete weeks are available.');
       }
       return notes;
     });

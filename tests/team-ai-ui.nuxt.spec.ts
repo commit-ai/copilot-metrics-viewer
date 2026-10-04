@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import TeamAiLocTrend from '../app/components/TeamAiLocTrend.vue';
 import TeamPrWeekly from '../app/components/TeamPrWeekly.vue';
 import AgentActivityViewer from '../app/components/AgentActivityViewer.vue';
+import TeamLeaderboard from '../app/components/TeamLeaderboard.vue';
 import type { ReportDayTotals } from '../server/services/github-copilot-usage-api';
 import type { TeamPrMetrics } from '../server/services/team-pr-search';
 
@@ -82,14 +83,50 @@ describe('team AI UI', () => {
     resolve(metrics);
     await flushPromises();
     expect(wrapper.text()).not.toContain('Merged per person');
+    expect(wrapper.emitted('metrics')?.at(-1)).toEqual([null]);
     fetchMock.mockResolvedValueOnce(metrics);
     await wrapper.get('button').trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('Merged per person');
+    expect(wrapper.emitted('metrics')?.at(-1)).toEqual([metrics]);
     await wrapper.setProps({ params: { githubTeam: 'frontend' } });
     expect(wrapper.text()).toContain('Merged per person');
     await wrapper.setProps({ params: { githubTeam: 'frontend', since: '2026-10-01' } });
     expect(wrapper.text()).not.toContain('Merged per person');
+    expect(wrapper.emitted('metrics')?.at(-1)).toEqual([null]);
+    wrapper.unmount();
+  });
+
+  it('ranks loaded merged PR counts and keeps unloaded teams unranked', async () => {
+    const team = { slug: 'qa', teamName: 'QA', color: '#123456', memberCount: 5, reportData: [] };
+    const prMetrics = { ...metrics, weeks: [
+      { weekStart: '2026-09-28', weekEnd: '2026-09-30', partial: true, merged: 999, aiTouched: 0 },
+      { weekStart: '2026-10-05', weekEnd: '2026-10-11', partial: false, merged: 5, aiTouched: 0 },
+      { weekStart: '2026-10-12', weekEnd: '2026-10-18', partial: false, merged: 10, aiTouched: 0 },
+    ] };
+    const wrapper = await mountSuspended(TeamLeaderboard, { props: { teams: [
+      { ...team, prMetrics },
+      { ...team, slug: 'dev', teamName: 'Development', prMetrics: { ...prMetrics, totalMerged: 20, avgMergedPerPerson: 4 } },
+      { ...team, slug: 'other', teamName: 'Other' },
+    ] } });
+    const select = wrapper.findComponent({ name: 'VSelect' });
+    expect(select.props('items')).toContainEqual({ key: 'prsMerged', label: 'PRs Merged', format: 'int' });
+    select.vm.$emit('update:modelValue', 'prsMerged');
+    await flushPromises();
+    const rows = wrapper.findAll('tbody tr');
+    expect(rows[0]!.text()).toContain('Development');
+    expect(rows[0]!.text()).toContain('20');
+    expect(rows[1]!.text()).toContain('QA');
+    expect(rows[1]!.text()).toContain('▲ 100%');
+    expect(rows[2]!.text()).toContain('Not loaded');
+    select.vm.$emit('update:modelValue', 'prsMergedPerPerson');
+    await flushPromises();
+    expect(wrapper.findAll('tbody tr')[0]!.text()).toContain('4.0');
+    await wrapper.setProps({ teams: [{ ...team, prMetrics: { ...prMetrics, truncated: true } }] });
+    expect(wrapper.find('tbody').text()).toContain('≥ 2.0');
+    expect(wrapper.find('tbody').text()).not.toContain('100%');
+    await wrapper.setProps({ teams: [{ ...team, prMetrics: null }] });
+    expect(wrapper.find('tbody').text()).not.toContain('10');
     wrapper.unmount();
   });
 
@@ -99,6 +136,7 @@ describe('team AI UI', () => {
     await wrapper.get('button').trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('about 8 minutes');
+    expect(wrapper.emitted('metrics')?.at(-1)).toEqual([null]);
     wrapper.unmount();
   });
 });

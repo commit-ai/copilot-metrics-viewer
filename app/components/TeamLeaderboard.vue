@@ -1,5 +1,5 @@
 <template>
-  <v-card variant="outlined">
+  <v-card variant="outlined" data-testid="team-leaderboard">
     <v-card-title class="d-flex align-center flex-wrap ga-2">
       <span class="text-subtitle-1">Team leaderboard</span>
       <v-spacer />
@@ -15,6 +15,10 @@
       />
     </v-card-title>
     <v-card-text>
+      <p v-if="isPrMetric" class="text-caption text-medium-emphasis mb-2">
+        Load each team's PR data below to include it in the ranking.
+        Counts marked ≥ are lower bounds from incomplete member searches.
+      </p>
       <v-table density="compact">
         <thead>
           <tr>
@@ -26,7 +30,7 @@
                 <template #activator="{ props: tip }">
                   <span v-bind="tip" style="cursor: help;">Trend</span>
                 </template>
-                <span>Second half of the selected range compared with the first half.</span>
+                <span>{{ isPrMetric ? 'Average merged PRs in the later half of complete weeks versus the earlier half. Partial weeks are excluded.' : 'Second half of the selected range compared with the first half.' }}</span>
               </v-tooltip>
             </th>
           </tr>
@@ -62,7 +66,8 @@
 <script lang="ts">
 import { defineComponent, computed, ref, type PropType } from 'vue';
 import type { ReportDayTotals } from '../../server/services/github-copilot-usage-api';
-import { summarizeTeam, trendWithinRange, type TeamMetricSummary, type TrendDirection } from '@/utils/teamMetrics';
+import type { TeamPrMetrics } from '../../server/services/team-pr-search';
+import { summarizeTeam, trendWithinRange, type TeamMetricSummary, type Trend, type TrendDirection } from '@/utils/teamMetrics';
 
 export interface LeaderboardTeam {
   slug: string;
@@ -70,16 +75,18 @@ export interface LeaderboardTeam {
   reportData: ReportDayTotals[];
   memberCount: number;
   color: string;
+  prMetrics?: TeamPrMetrics | null;
 }
 
 type MetricKey =
   | 'agentLocSharePct' | 'copilotAdoptionPct' | 'agentAdoptionPct'
-  | 'cliAdoptionPct' | 'activeUsersPct' | 'acceptanceRatePct';
+  | 'cliAdoptionPct' | 'activeUsersPct' | 'acceptanceRatePct'
+  | 'prsMerged' | 'prsMergedPerPerson';
 
 interface MetricOption {
   key: MetricKey;
   label: string;
-  format: 'pct' | 'int';
+  format: 'pct' | 'int' | 'decimal';
 }
 
 const METRIC_OPTIONS: MetricOption[] = [
@@ -89,6 +96,8 @@ const METRIC_OPTIONS: MetricOption[] = [
   { key: 'cliAdoptionPct', label: 'CLI adoption %', format: 'pct' },
   { key: 'activeUsersPct', label: 'Active users %', format: 'pct' },
   { key: 'acceptanceRatePct', label: 'Acceptance rate %', format: 'pct' },
+  { key: 'prsMerged', label: 'PRs Merged', format: 'int' },
+  { key: 'prsMergedPerPerson', label: 'PRs Merged per person', format: 'decimal' },
 ];
 
 export default defineComponent({
@@ -102,18 +111,36 @@ export default defineComponent({
       () => METRIC_OPTIONS.find(option => option.key === selectedMetric.value) ?? METRIC_OPTIONS[0]!
     );
 
-    const pick = (summary: TeamMetricSummary) => summary[activeMetric.value.key] as number | null;
+    const isPrMetric = computed(() => selectedMetric.value === 'prsMerged' || selectedMetric.value === 'prsMergedPerPerson');
+    const pick = (summary: TeamMetricSummary) => {
+      const key = activeMetric.value.key;
+      return key === 'prsMerged' || key === 'prsMergedPerPerson' ? null : summary[key];
+    };
+
+    function prTrend(metrics: TeamPrMetrics | null | undefined): Trend {
+      const weeks = (metrics?.weeks ?? []).filter(week => !week.partial).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+      if (weeks.length < 2 || metrics?.truncated) return { direction: 'flat', changePct: null };
+      const midpoint = Math.floor(weeks.length / 2);
+      const earlier = weeks.slice(0, midpoint).reduce((sum, week) => sum + week.merged, 0) / midpoint;
+      const later = weeks.slice(midpoint).reduce((sum, week) => sum + week.merged, 0) / (weeks.length - midpoint);
+      return {
+        direction: later > earlier ? 'up' : later < earlier ? 'down' : 'flat',
+        changePct: earlier === 0 ? null : ((later - earlier) / earlier) * 100,
+      };
+    }
 
     const rankedRows = computed(() => {
       const rows = props.teams.map(team => {
-        const value = pick(summarizeTeam(team.reportData, team.memberCount));
+        const value = isPrMetric.value
+          ? selectedMetric.value === 'prsMerged' ? team.prMetrics?.totalMerged ?? null : team.prMetrics?.avgMergedPerPerson ?? null
+          : pick(summarizeTeam(team.reportData, team.memberCount));
         return {
           slug: team.slug,
           teamName: team.teamName,
           color: team.color,
           value,
-          display: formatValue(value, activeMetric.value.format),
-          trend: trendWithinRange(team.reportData, pick, team.memberCount),
+          display: isPrMetric.value && !team.prMetrics ? 'Not loaded' : `${isPrMetric.value && team.prMetrics?.truncated ? '≥ ' : ''}${formatValue(value, activeMetric.value.format)}`,
+          trend: isPrMetric.value ? prTrend(team.prMetrics) : trendWithinRange(team.reportData, pick, team.memberCount),
         };
       });
 
@@ -122,9 +149,9 @@ export default defineComponent({
       return rows.map((row, index) => ({ ...row, rank: row.value === null ? '—' : index + 1 }));
     });
 
-    function formatValue(value: number | null, format: 'pct' | 'int') {
+    function formatValue(value: number | null, format: MetricOption['format']) {
       if (value === null) return '—';
-      return format === 'pct' ? `${value.toFixed(1)}%` : Math.round(value).toLocaleString();
+      return format === 'pct' ? `${value.toFixed(1)}%` : format === 'decimal' ? value.toFixed(1) : Math.round(value).toLocaleString();
     }
 
     const trendArrow = (direction: TrendDirection) =>
@@ -136,6 +163,7 @@ export default defineComponent({
       selectedMetric,
       metricOptions: METRIC_OPTIONS,
       activeMetric,
+      isPrMetric,
       rankedRows,
       trendArrow,
       trendClass,

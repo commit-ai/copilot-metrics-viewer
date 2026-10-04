@@ -89,7 +89,9 @@ Both the deep-dive and comparison views include team-level AI contribution and a
 
 **Weekly merged pull requests** — on-demand panels in both single-team and comparison views show weekly merged PR counts, AI-touched PRs, a rolling weekly average and merged PRs per person. Each comparison panel is labelled by team. Changing teams or the date range clears loaded PR data so stale results are never shown for a new selection.
 
-All comparison metrics are expressed as percentages or per-person figures so that teams of different sizes are directly comparable.
+**PRs Merged comparison cards** — one KPI tile per selected team displays its merged count for the selected range, populated by the same on-demand request as the weekly panel. Choose **PRs Merged** or **PRs Merged per person** in the team leaderboard to rank loaded teams. Unloaded teams show "Not loaded" and are not ranked; incomplete member searches show a lower-bound marker (`≥`). PR trends compare average counts in the later versus earlier half of complete weeks, excluding partial weeks; fewer than two complete weeks or truncated results have no trend.
+
+Adoption and usage comparisons use percentages or per-person figures. PR counts are also available as absolute totals for executive reporting; use the per-person leaderboard option when comparing differently sized teams.
 
 ##### Data sources, calculations and assumptions
 

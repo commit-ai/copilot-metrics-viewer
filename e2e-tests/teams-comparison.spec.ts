@@ -100,7 +100,49 @@ test.describe('Teams Comparison tests', () => {
             await panel.getByRole('button', { name: 'Load PR data', exact: true }).click();
             await expect(panel.getByText('Weekly average', { exact: true })).toBeVisible();
             await expect(panel.getByText('Merged per person', { exact: true })).toBeVisible();
+            const canvas = panel.locator('canvas');
+            await expect(canvas).toBeVisible();
+            await dashboard.page.waitForTimeout(500);
+            const height = await canvas.evaluate(element => element.getBoundingClientRect().height);
+            expect(height).toBeGreaterThan(100);
+            expect(height).toBeLessThanOrEqual(260);
         }
+        const tiles = dashboard.page.getByTestId('team-pr-merged-card');
+        await expect(tiles).toHaveCount(2);
+        for (let index = 0; index < 2; index++) {
+            const total = await teamPrPanels.nth(index).getByTestId('team-pr-merged-total').innerText();
+            await expect(tiles.nth(index).getByTestId('team-pr-merged-value')).toHaveText(total);
+        }
+        const leaderboard = dashboard.page.getByTestId('team-leaderboard');
+        await leaderboard.getByRole('combobox').click();
+        await dashboard.page.getByRole('option', { name: 'PRs Merged', exact: true }).click();
+        await expect(leaderboard.locator('thead')).toContainText('PRs Merged');
+        await expect(leaderboard.locator('tbody')).not.toContainText('Not loaded');
+        await dashboard.page.setViewportSize({ width: 420, height: 800 });
+        await dashboard.page.waitForTimeout(500);
+        for (const canvas of await teamPrPanels.locator('canvas').all()) {
+            expect(await canvas.evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(260);
+        }
+        await dashboard.page.setViewportSize({ width: 1280, height: 720 });
+    });
+
+    test('PR cards and leaderboard clear on date changes, including returning to a previous range', tag, async () => {
+        await dashboard.page.getByRole('button', { name: 'Show date range', exact: true }).click();
+        const fromDate = dashboard.page.getByLabel('From Date', { exact: true });
+        const originalFrom = await fromDate.inputValue();
+        const nextDay = new Date(`${originalFrom}T00:00:00Z`);
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+        await fromDate.fill(nextDay.toISOString().slice(0, 10));
+        await dashboard.page.getByRole('button', { name: 'Apply', exact: true }).click();
+        const cards = dashboard.page.getByTestId('team-pr-merged-value');
+        await expect(cards).toHaveText(['—', '—']);
+        await expect(dashboard.page.getByTestId('team-pr-weekly').locator('canvas')).toHaveCount(0);
+        await fromDate.fill(originalFrom);
+        await dashboard.page.getByRole('button', { name: 'Apply', exact: true }).click();
+        await expect(cards).toHaveText(['—', '—']);
+        const leaderboard = dashboard.page.getByTestId('team-leaderboard');
+        await expect(leaderboard.locator('tbody')).toContainText('Not loaded');
+        await dashboard.page.getByRole('button', { name: 'Hide date range', exact: true }).click();
     });
 
     test('QA team activity is filtered to its members', tag, async () => {

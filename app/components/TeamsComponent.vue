@@ -249,7 +249,7 @@
             <TeamAiLocTrend :teams="comparisonTeams" />
           </v-col>
           <v-col cols="12">
-            <TeamPrWeekly :params="singleTeamPrParams" :team-name="singleTeamName" />
+            <TeamPrWeekly :params="singleTeamPrParams" :team-name="singleTeamName" @metrics="setTeamPrMetrics(selectedTeams[0]!, $event)" />
           </v-col>
         </v-row>
         <div class="d-flex justify-end mb-3">
@@ -478,6 +478,25 @@
             </v-card>
           </v-col>
         </v-row>
+        <v-row dense>
+          <v-col v-for="team in comparisonTeams" :key="team.slug" cols="12" sm="6" md="4" lg="3">
+            <v-card elevation="3" class="pa-4 text-center" data-testid="team-pr-merged-card" :style="`border-top: 4px solid ${team.color}`">
+              <div class="text-subtitle-2">{{ team.teamName }}</div>
+              <div class="text-h6 mt-1">PRs Merged</div>
+              <div class="text-caption text-medium-emphasis">{{ dateRangeDescription }}</div>
+              <div class="text-h3 text-success my-2" data-testid="team-pr-merged-value">
+                {{ team.prMetrics ? `${team.prMetrics.truncated ? '≥ ' : ''}${team.prMetrics.totalMerged.toLocaleString()}` : '—' }}
+              </div>
+              <div class="text-caption text-medium-emphasis">
+                <template v-if="team.prMetrics">
+                  Merged PRs authored by current members, plus Copilot PRs assigned to them.
+                  {{ team.prMetrics.orgScoped ? 'Limited to organization repositories.' : 'Not restricted to organization repositories.' }}
+                </template>
+                <template v-else>Load PR data below to populate this metric and the leaderboard.</template>
+              </div>
+            </v-card>
+          </v-col>
+        </v-row>
       </v-container>
 
       <!-- Column toggle + comparison charts -->
@@ -569,10 +588,10 @@
         <v-row class="mt-2">
           <v-col cols="12">
             <h3 class="text-subtitle-1 font-weight-medium mb-2">Merged PRs — team comparison</h3>
-            <p class="text-caption text-medium-emphasis">Load each team's PR data on demand to compare merged counts, weekly averages and merged PRs per person.</p>
+            <p class="text-caption text-medium-emphasis">Load each team's PR data on demand to populate the PRs Merged cards and leaderboard, and compare weekly averages and merged PRs per person.</p>
           </v-col>
           <v-col v-for="team in comparisonTeams" :key="team.slug" cols="12" :md="chartColumns === '2' ? 6 : 12">
-            <TeamPrWeekly :params="teamPrParams(team.slug)" :team-name="team.teamName" />
+            <TeamPrWeekly :params="teamPrParams(team.slug)" :team-name="team.teamName" @metrics="setTeamPrMetrics(team.slug, $event)" />
           </v-col>
         </v-row>
       </v-container>
@@ -633,6 +652,7 @@ import TeamAiScorecards from './TeamAiScorecards.vue'
 import TeamLeaderboard from './TeamLeaderboard.vue'
 import TeamAdoptionHeatmap from './TeamAdoptionHeatmap.vue'
 import TeamPrWeekly from './TeamPrWeekly.vue'
+import type { TeamPrMetrics } from '../../server/services/team-pr-search'
 
 const FEATURE_DISPLAY: Record<string, string> = {
   code_completion: 'Completions',
@@ -1342,6 +1362,7 @@ export default defineComponent({
         teamName: availableTeams.value.find(t => t.slug === td.slug)?.name || td.slug,
         reportData: td.reportData,
         memberCount: td.memberCount,
+        prMetrics: getTeamPrMetrics(td.slug),
         color: CHART_COLORS[idx % CHART_COLORS.length]!.border
       }))
     )
@@ -1355,6 +1376,14 @@ export default defineComponent({
       return options.toParams()
     }
     const singleTeamPrParams = computed(() => selectedTeams.value[0] ? teamPrParams(selectedTeams.value[0]) : {})
+    const teamPrMetrics = ref<Record<string, { paramsKey: string; metrics: TeamPrMetrics | null }>>({})
+    const getTeamPrMetrics = (slug: string) => {
+      const saved = teamPrMetrics.value[slug]
+      return saved?.paramsKey === JSON.stringify(teamPrParams(slug)) ? saved.metrics : null
+    }
+    const setTeamPrMetrics = (slug: string, metrics: TeamPrMetrics | null) => {
+      teamPrMetrics.value[slug] = { paramsKey: JSON.stringify(teamPrParams(slug)), metrics }
+    }
 
 
     // ── Comparison: chart data refs ────────────────────────────────────────────
@@ -1616,6 +1645,7 @@ export default defineComponent({
       comparisonTeams,
       singleTeamPrParams,
       teamPrParams,
+      setTeamPrMetrics,
       acceptanceRateCountChartData,
       activeUsersChartData,
       editorBarChartData,
