@@ -87,6 +87,37 @@ test.describe('Teams Comparison tests', () => {
         await expect(dashboard.page.getByText('Model Usage (% of interactions) — by Team')).toBeVisible();
         await expect(dashboard.page.getByText('Team leaderboard', { exact: true })).toBeVisible();
         await expect(dashboard.page.getByText('Adoption heatmap', { exact: true })).toBeVisible();
-        await expect(dashboard.page.getByText('AI lines of code', { exact: true }).first()).toBeVisible();
+        await expect(dashboard.page.getByText('AI LOC % (agent share)', { exact: true }).first()).toBeVisible();
+        await expect(dashboard.page.getByText('AI LOC % (agent share) — over time', { exact: true })).toBeVisible();
+        await expect(dashboard.page.getByText('AI lines of code', { exact: true })).toHaveCount(0);
+        await expect(dashboard.page.getByText('AI LOC / person', { exact: true })).toHaveCount(0);
+        await expect(dashboard.page.getByText('Merged PRs — team comparison', { exact: true })).toBeVisible();
+
+        const teamPrPanels = dashboard.page.getByTestId('team-pr-weekly');
+        await expect(teamPrPanels).toHaveCount(2);
+        for (const panel of await teamPrPanels.all()) {
+            await panel.getByRole('button', { name: 'Load PR data', exact: true }).click();
+            await expect(panel.getByText('Weekly average', { exact: true })).toBeVisible();
+            await expect(panel.getByText('Merged per person', { exact: true })).toBeVisible();
+        }
+    });
+
+    test('QA team activity is filtered to its members', tag, async () => {
+        await dashboard.page.getByRole('button', { name: /^clear all$/i }).click();
+        const dropdown = dashboard.page.locator('[role="combobox"]').first();
+        await dropdown.click();
+        const responsePromise = dashboard.page.waitForResponse(response =>
+            response.url().includes('/api/metrics?') && new URL(response.url()).searchParams.get('githubTeam') === 'qa-team'
+        );
+        await dashboard.page.locator('[role="listbox"]').getByText('QA Team', { exact: true }).click();
+        const response = await responsePromise;
+        expect(response.ok()).toBe(true);
+        const data = await response.json();
+        expect(data.teamMemberCount).toBe(3);
+        expect(data.reportData.length).toBeGreaterThan(0);
+        expect(data.reportData.some((day: { daily_active_users: number }) => day.daily_active_users > 0)).toBe(true);
+        for (const day of data.reportData) {
+            expect(day.daily_active_users).toBeLessThanOrEqual(data.teamMemberCount);
+        }
     });
 });

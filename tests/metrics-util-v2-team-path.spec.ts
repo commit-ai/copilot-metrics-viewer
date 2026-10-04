@@ -180,4 +180,30 @@ describe('getMetricsDataV2 — historical mode team path (regression for 500 bug
     // DB should NOT be queried when team is empty
     expect(mockGetUserDayMetrics).not.toHaveBeenCalled();
   });
+
+  it('filters mock reports to team members instead of returning org-wide active users', async () => {
+    process.env.NUXT_PUBLIC_IS_DATA_MOCKED = 'true';
+    _mockQuery.isDataMocked = 'true';
+    const records = [
+      makeDayRecord('octocat', '2026-03-15'),
+      makeDayRecord('octokitten', '2026-03-15'),
+      makeDayRecord('non-member', '2026-03-15'),
+    ];
+    const api = await import('../server/services/github-copilot-usage-api');
+    const { aggregateTeamMetrics } = await import('../server/services/user-metrics-aggregator');
+    const rawRecords = vi.spyOn(api, 'fetchRawUserDayRecords').mockResolvedValue(records);
+    const orgReport = vi.spyOn(api, 'fetchLatestReport').mockResolvedValue(
+      aggregateTeamMetrics(records, new Set(records.map(record => record.user_login)))
+    );
+    try {
+      const { getMetricsDataV2 } = await import('../shared/utils/metrics-util-v2');
+      const result = await getMetricsDataV2(makeEvent(false));
+      expect(result.reportData[0]?.daily_active_users).toBe(2);
+      expect(result.reportData[0]?.loc_added_sum).toBe(300);
+      expect(rawRecords).toHaveBeenCalled();
+    } finally {
+      rawRecords.mockRestore();
+      orgReport.mockRestore();
+    }
+  });
 });

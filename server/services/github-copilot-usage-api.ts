@@ -1072,6 +1072,8 @@ export async function downloadUserDayRecords(downloadUrl: string): Promise<UserD
       const parsed = JSON.parse(trimmed);
       if (Array.isArray(parsed)) {
         records = parsed;
+      } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.day_totals)) {
+        records = parsed.day_totals;
       } else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as Record<string, unknown>).user_totals)) {
         // Pre-aggregated mock format — no per-day records available
         return [];

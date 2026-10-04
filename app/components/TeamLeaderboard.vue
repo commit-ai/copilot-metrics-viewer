@@ -73,7 +73,7 @@ export interface LeaderboardTeam {
 }
 
 type MetricKey =
-  | 'aiLocPerPerson' | 'aiLoc' | 'copilotAdoptionPct' | 'agentAdoptionPct'
+  | 'agentLocSharePct' | 'copilotAdoptionPct' | 'agentAdoptionPct'
   | 'cliAdoptionPct' | 'activeUsersPct' | 'acceptanceRatePct';
 
 interface MetricOption {
@@ -83,8 +83,7 @@ interface MetricOption {
 }
 
 const METRIC_OPTIONS: MetricOption[] = [
-  { key: 'aiLocPerPerson', label: 'AI LOC per person', format: 'int' },
-  { key: 'aiLoc', label: 'AI lines of code', format: 'int' },
+  { key: 'agentLocSharePct', label: 'AI LOC % (agent share)', format: 'pct' },
   { key: 'copilotAdoptionPct', label: 'Copilot adoption %', format: 'pct' },
   { key: 'agentAdoptionPct', label: 'Agent adoption %', format: 'pct' },
   { key: 'cliAdoptionPct', label: 'CLI adoption %', format: 'pct' },
@@ -98,7 +97,7 @@ export default defineComponent({
     teams: { type: Array as PropType<LeaderboardTeam[]>, required: true },
   },
   setup(props) {
-    const selectedMetric = ref<MetricKey>('aiLocPerPerson');
+    const selectedMetric = ref<MetricKey>('agentLocSharePct');
     const activeMetric = computed(
       () => METRIC_OPTIONS.find(option => option.key === selectedMetric.value) ?? METRIC_OPTIONS[0]!
     );

@@ -75,13 +75,15 @@ Select **one team** for a full deep-dive view with KPI tiles, time-series charts
 
 Both the deep-dive and comparison views include team-level AI contribution and adoption reporting.
 
-**AI contribution scorecards** — per team: AI lines of code, AI LOC per person, agent share of AI LOC, Copilot / agent / CLI adoption, and VS Code agent users.
+**AI contribution scorecards** — per team: AI LOC % (agent share), Copilot / agent / CLI adoption, and VS Code agent users. Raw LOC counts and LOC-per-person metrics are intentionally omitted.
 
-**Team leaderboard** — ranks the selected teams by AI LOC per person, with a trend arrow comparing the later half of the selected range against the earlier half.
+**AI LOC % trend chart** — daily agent-written LOC as a percentage of Copilot-tracked LOC, with one line per selected team. Days without tracked LOC are gaps rather than zeroes.
+
+**Team leaderboard** — ranks the selected teams by AI LOC % (agent share) by default, with a trend arrow comparing the later half of the selected range against the earlier half.
 
 **Adoption heatmap** — weekly adoption percentage per team, with a summary naming the highest- and lowest-adoption teams.
 
-**Weekly merged pull requests** — an on-demand panel (single-team view) showing weekly merged PR counts, the count with an AI contribution, and a rolling weekly average.
+**Weekly merged pull requests** — on-demand panels in both single-team and comparison views show weekly merged PR counts, AI-touched PRs, a rolling weekly average and merged PRs per person. Each comparison panel is labelled by team. Changing teams or the date range clears loaded PR data so stale results are never shown for a new selection.
 
 All comparison metrics are expressed as percentages or per-person figures so that teams of different sizes are directly comparable.
 
@@ -89,9 +91,7 @@ All comparison metrics are expressed as percentages or per-person figures so tha
 
 | Metric | Source | Calculation |
 | --- | --- | --- |
-| AI lines of code | `loc_added_sum` from the Copilot usage report | Summed over the selected range |
-| AI LOC per person | As above ÷ team member count | Member count comes from the GitHub Teams API |
-| Agent share of AI LOC | `totals_by_feature` for `chat_panel_agent_mode` and `agent_edit` | Agent LOC ÷ total AI LOC |
+| AI LOC % (agent share) | `totals_by_feature` for `chat_panel_agent_mode` and `agent_edit` | Agent LOC ÷ total Copilot LOC; weighted by LOC across the selected range |
 | Acceptance rate | `code_acceptance_activity_count` ÷ `code_generation_activity_count` | Weighted across the range, not a mean of daily rates |
 | Copilot / agent / CLI / VS Code agent adoption | Rolling distinct-user windows computed server-side | Distinct users ÷ team member count |
 | Editor & model usage | `totals_by_ide` / `totals_by_model_feature` | Share of each team's own interactions |
@@ -117,7 +117,7 @@ GitHub's Copilot metrics API reports pull request totals only for whole organiza
 - If GitHub rate limits the request, the panel reports how many minutes to wait before retrying rather than failing silently.
 
 > [!NOTE]
-> In mock mode `getMetricsDataV2` returns organization-level data for team requests, so mock teams share the same underlying metric values while their member counts differ. Per-person and adoption figures therefore vary between mock teams even though the absolute totals do not.
+> Mock team requests use the same member-filtered per-user aggregation as live team requests, using the bundled per-day user fixture and its available date range. Active-user percentages use the shared capped adoption calculation for both cards and charts.
 
 #### Team-Scoped Direct URLs
 You can link directly to a fully team-scoped dashboard — every tab (IDE metrics, chat, agents, languages, etc.) will automatically filter to that team's members only. A blue banner at the top of the page confirms the active scope and provides a quick link back to the organization view.

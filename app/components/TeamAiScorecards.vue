@@ -46,7 +46,6 @@ export default defineComponent({
     // Percentages and per-person figures are null when the team size is
     // unknown — show an em dash rather than a misleading 0%.
     const pct = (value: number | null) => (value === null ? '—' : `${value.toFixed(1)}%`);
-    const num = (value: number | null) => (value === null ? '—' : Math.round(value).toLocaleString());
 
     const cards = computed(() =>
       props.teams.map(team => {
@@ -58,17 +57,7 @@ export default defineComponent({
           memberCount: team.memberCount,
           stats: [
             {
-              label: 'AI lines of code',
-              value: summary.aiLoc.toLocaleString(),
-              tooltip: 'Lines of code added by Copilot across the selected date range.',
-            },
-            {
-              label: 'AI LOC / person',
-              value: num(summary.aiLocPerPerson),
-              tooltip: 'Copilot lines added divided by the number of team members.',
-            },
-            {
-              label: 'Agent share of AI LOC',
+              label: 'AI LOC % (agent share)',
               value: pct(summary.agentLocSharePct),
               tooltip: 'Share of Copilot-written lines produced by agent features. The denominator is Copilot output, not all code the team wrote — GitHub reports no human-authored line counts.',
             },

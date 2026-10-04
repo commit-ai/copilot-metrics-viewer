@@ -1,7 +1,7 @@
 <template>
-  <v-card variant="outlined">
+  <v-card variant="outlined" data-testid="team-pr-weekly">
     <v-card-title class="d-flex align-center flex-wrap ga-2">
-      <span class="text-subtitle-1">Weekly merged pull requests</span>
+      <span class="text-subtitle-1">Weekly merged pull requests{{ teamName ? ` — ${teamName}` : '' }}</span>
       <v-spacer />
       <v-btn
         v-if="!loaded"
@@ -51,7 +51,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, computed, type PropType } from 'vue';
+import { defineComponent, ref, computed, watch, type PropType } from 'vue';
 import { Bar } from 'vue-chartjs';
 import type { ChartData } from 'chart.js';
 import {
@@ -77,25 +77,36 @@ export default defineComponent({
     const error = ref('');
     const rateLimited = ref(false);
     const loaded = computed(() => metrics.value !== null);
+    let requestVersion = 0;
+    watch(() => JSON.stringify(props.params), () => {
+      requestVersion++;
+      metrics.value = null;
+      error.value = '';
+      rateLimited.value = false;
+      loading.value = false;
+    });
 
     const load = async () => {
+      const version = ++requestVersion;
       loading.value = true;
       error.value = '';
       rateLimited.value = false;
       try {
-        metrics.value = await $fetch<TeamPrMetrics>('/api/team-pull-requests', { params: props.params });
+        const result = await $fetch<TeamPrMetrics>('/api/team-pull-requests', { params: props.params });
+        if (version === requestVersion) metrics.value = result;
       } catch (err: unknown) {
-        const failure = err as { statusCode?: number; data?: { retryAfterMinutes?: number; message?: string } };
+        if (version !== requestVersion) return;
+        const failure = err as { statusCode?: number; data?: { data?: { retryAfterMinutes?: number }; retryAfterMinutes?: number; message?: string } };
         metrics.value = null;
         if (failure.statusCode === 429) {
           rateLimited.value = true;
-          const minutes = failure.data?.retryAfterMinutes ?? 1;
+          const minutes = failure.data?.data?.retryAfterMinutes ?? failure.data?.retryAfterMinutes ?? 1;
           error.value = `GitHub's search rate limit was reached. Come back in about ${minutes} minute${minutes === 1 ? '' : 's'} and try again.`;
         } else {
           error.value = failure.data?.message || 'Could not load pull request data for this team.';
         }
       } finally {
-        loading.value = false;
+        if (version === requestVersion) loading.value = false;
       }
     };
 

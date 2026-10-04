@@ -239,6 +239,9 @@
             <TeamAiScorecards :teams="comparisonTeams" />
           </v-col>
           <v-col cols="12">
+            <TeamAiLocTrend :teams="comparisonTeams" />
+          </v-col>
+          <v-col cols="12">
             <TeamPrWeekly :params="singleTeamPrParams" :team-name="singleTeamName" />
           </v-col>
         </v-row>
@@ -453,8 +456,8 @@
                 <span class="font-weight-medium">{{ card.cliAdoptionPct }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
-                <span>AI LOC / person</span>
-                <span class="font-weight-medium">{{ card.aiLocPerPerson }}</span>
+                <span>AI LOC % (agent share)</span>
+                <span class="font-weight-medium">{{ card.aiLocPct }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
                 <span>Acceptance Rate</span>
@@ -503,6 +506,12 @@
           </v-col>
         </v-row>
 
+        <v-row class="mt-2">
+          <v-col cols="12">
+            <TeamAiLocTrend :teams="comparisonTeams" />
+          </v-col>
+        </v-row>
+
         <!-- Row 2: Editor share | Model share (both normalized per team) -->
         <v-row class="mt-2">
           <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
@@ -548,6 +557,15 @@
           <v-col cols="12">
             <h3 class="text-subtitle-1 font-weight-medium mb-2">AI contribution scorecards</h3>
             <TeamAiScorecards :teams="comparisonTeams" />
+          </v-col>
+        </v-row>
+        <v-row class="mt-2">
+          <v-col cols="12">
+            <h3 class="text-subtitle-1 font-weight-medium mb-2">Merged PRs — team comparison</h3>
+            <p class="text-caption text-medium-emphasis">Load each team's PR data on demand to compare merged counts, weekly averages and merged PRs per person.</p>
+          </v-col>
+          <v-col v-for="team in comparisonTeams" :key="team.slug" cols="12" :md="chartColumns === '2' ? 6 : 12">
+            <TeamPrWeekly :params="teamPrParams(team.slug)" :team-name="team.teamName" />
           </v-col>
         </v-row>
       </v-container>
@@ -602,7 +620,8 @@ import {
   Legend
 } from 'chart.js'
 import { buildReportsToUrl } from '@/utils/routeUtils'
-import { summarizeTeam, editorSharePct, modelSharePct } from '@/utils/teamMetrics'
+import { summarizeTeam, adoptionPct, editorSharePct, modelSharePct } from '@/utils/teamMetrics'
+import TeamAiLocTrend from './TeamAiLocTrend.vue'
 import TeamAiScorecards from './TeamAiScorecards.vue'
 import TeamLeaderboard from './TeamLeaderboard.vue'
 import TeamAdoptionHeatmap from './TeamAdoptionHeatmap.vue'
@@ -675,7 +694,7 @@ export default defineComponent({
   name: 'TeamsComponent',
   components: {
     LineChart, BarChart, Doughnut, ReportsToFilter,
-    TeamAiScorecards, TeamLeaderboard, TeamAdoptionHeatmap, TeamPrWeekly
+    TeamAiScorecards, TeamLeaderboard, TeamAdoptionHeatmap, TeamPrWeekly, TeamAiLocTrend
   },
   props: {
     dateRange: { type: Object as PropType<DateRange>, required: false, default: () => ({}) },
@@ -786,6 +805,7 @@ export default defineComponent({
       scales: {
         y: {
           beginAtZero: true,
+          max: 100,
           position: 'left' as const,
           ticks: { callback: (value: string | number) => `${value}%` }
         },
@@ -1293,12 +1313,12 @@ export default defineComponent({
           slug: td.slug,
           memberCount: td.memberCount,
           activeUsers,
-          activeUsersPct: fmtPct(td.memberCount ? (activeUsers / td.memberCount) * 100 : null),
+          activeUsersPct: fmtPct(adoptionPct(activeUsers, td.memberCount)),
           acceptanceRate: fmtPct(acceptanceRate),
           copilotAdoptionPct: fmtPct(summary.copilotAdoptionPct),
           agentAdoptionPct: fmtPct(summary.agentAdoptionPct),
           cliAdoptionPct: fmtPct(summary.cliAdoptionPct),
-          aiLocPerPerson: summary.aiLocPerPerson === null ? '—' : Math.round(summary.aiLocPerPerson).toLocaleString(),
+          aiLocPct: fmtPct(summary.agentLocSharePct),
           totalInteractions: summary.totalInteractions,
           color
         }
@@ -1319,17 +1339,15 @@ export default defineComponent({
       }))
     )
 
-    /** Params for the on-demand PR endpoint; only valid in single-team mode. */
-    const singleTeamPrParams = computed<Record<string, unknown>>(() => {
-      const slug = selectedTeams.value[0]
-      if (!slug) return {}
+    const teamPrParams = (slug: string): Record<string, unknown> => {
       const options = Options.fromRoute(useRoute(), props.dateRange.since, props.dateRange.until)
       options.githubTeam = slug
       if (selectedOrg.value && scopeType.value === 'enterprise') {
         options.githubOrg = selectedOrg.value
       }
-      return options.toParams() as unknown as Record<string, unknown>
-    })
+      return options.toParams()
+    }
+    const singleTeamPrParams = computed(() => selectedTeams.value[0] ? teamPrParams(selectedTeams.value[0]) : {})
 
 
     // ── Comparison: chart data refs ────────────────────────────────────────────
@@ -1472,7 +1490,7 @@ export default defineComponent({
               const count = td.reportData.find(d => d.day === day)?.daily_active_users
                 ?? td.metrics.find(m => m.day === day)?.total_active_users
                 ?? 0
-              return knownSize ? (count / td.memberCount) * 100 : count
+              return knownSize ? adoptionPct(count, td.memberCount)! : count
             }),
             backgroundColor: color.bg,
             borderColor: color.border,
@@ -1590,6 +1608,7 @@ export default defineComponent({
       comparisonModelsData,
       comparisonTeams,
       singleTeamPrParams,
+      teamPrParams,
       acceptanceRateCountChartData,
       activeUsersChartData,
       editorBarChartData,
