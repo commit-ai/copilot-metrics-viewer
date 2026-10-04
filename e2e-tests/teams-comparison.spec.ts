@@ -82,11 +82,11 @@ test.describe('Teams Comparison tests', () => {
         const devTeamCard = dashboard.page.getByText('Development Team', { exact: true }).first();
         await expect(devTeamCard).toBeVisible();
 
-        // Verify that comparison charts are displayed
-        const languageUsageChart = dashboard.page.getByText('Language Usage — by Team');
-        await expect(languageUsageChart).toBeVisible();
-
-        const editorUsageChart = dashboard.page.getByText('Editor Usage — by Team');
-        await expect(editorUsageChart).toBeVisible();
+        // Verify the normalized comparison charts and new team-level views.
+        await expect(dashboard.page.getByText('Editor Usage (% of interactions) — by Team')).toBeVisible();
+        await expect(dashboard.page.getByText('Model Usage (% of interactions) — by Team')).toBeVisible();
+        await expect(dashboard.page.getByText('Team leaderboard', { exact: true })).toBeVisible();
+        await expect(dashboard.page.getByText('Adoption heatmap', { exact: true })).toBeVisible();
+        await expect(dashboard.page.getByText('AI lines of code', { exact: true }).first()).toBeVisible();
     });
 });
