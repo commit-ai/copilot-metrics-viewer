@@ -22,7 +22,6 @@
  */
 
 import type { ReportDayTotals } from '../../server/services/github-copilot-usage-api';
-import { AGENT_FEATURES } from '../../shared/utils/feature-classification';
 
 /** Ranges longer than this use the 28-day rolling window for adoption. */
 const WEEKLY_WINDOW_MAX_DAYS = 7;
@@ -33,7 +32,7 @@ export interface TeamMetricSummary {
   /** {@link aiLoc} per team member; null when the team size is unknown. */
   aiLocPerPerson: number | null;
   /**
-   * Share of Copilot-tracked lines that came from agent features.
+   * Share of Copilot-added lines from direct Agent/Edit-mode file edits.
    *
    * NOTE: the denominator is Copilot's own output, NOT all code the team
    * wrote — the Copilot API reports no human-authored line counts.
@@ -100,12 +99,16 @@ function rollingUsers(
   return (last[key] as number | undefined) ?? (last[monthlyKey] as number | undefined) ?? 0;
 }
 
-/** Lines added by agent features (agent mode chat and agent edits). */
+/** Direct Agent/Edit-mode file additions; excludes code blocks copied from chat. */
 export function agentLoc(days: ReportDayTotals[]): number {
   return days.reduce((total, day) => {
-    const agentFeatures = (day.totals_by_feature ?? []).filter(f => AGENT_FEATURES.includes(f.feature));
+    const agentFeatures = (day.totals_by_feature ?? []).filter(f => f.feature === 'agent_edit');
     return total + agentFeatures.reduce((sum, f) => sum + (f.loc_added_sum || 0), 0);
   }, 0);
+}
+
+export function agentLocSharePct(days: ReportDayTotals[]): number | null {
+  return safePct(agentLoc(days), sumBy(days, day => day.loc_added_sum));
 }
 
 export function summarizeTeam(days: ReportDayTotals[], memberCount: number): TeamMetricSummary {
@@ -124,7 +127,7 @@ export function summarizeTeam(days: ReportDayTotals[], memberCount: number): Tea
   return {
     aiLoc,
     aiLocPerPerson: memberCount > 0 ? aiLoc / memberCount : null,
-    agentLocSharePct: safePct(agentLoc(days), aiLoc),
+    agentLocSharePct: agentLocSharePct(days),
     acceptanceRatePct: safePct(acceptances, generations),
     activeUsers,
     activeUsersPct: adoptionPct(activeUsers, memberCount),

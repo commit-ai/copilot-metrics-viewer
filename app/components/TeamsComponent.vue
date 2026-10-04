@@ -22,6 +22,13 @@
       </div>
     </v-card>
 
+    <v-alert type="info" variant="tonal" density="compact" class="mx-4 mb-1">
+      <strong>Current-membership view:</strong> All days are filtered to today's team members, not membership on each activity day.
+      Historical team changes can affect attribution; overlapping teams must not be summed into organization totals.
+      GitHub's historical team recipe requires daily user-teams joins and excludes teams with fewer than 5 seated users.
+      <a href="https://docs.github.com/en/copilot/reference/copilot-usage-metrics/team-level-metrics" target="_blank" rel="noopener">Team-level metrics guidance</a>
+    </v-alert>
+
     <!-- Rate limit warning when not using historical/DB mode -->
     <v-alert
       v-if="!isHistoricalMode"
@@ -456,7 +463,7 @@
                 <span class="font-weight-medium">{{ card.cliAdoptionPct }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
-                <span>AI LOC % (agent share)</span>
+                <span>Agent share of Copilot-added LOC</span>
                 <span class="font-weight-medium">{{ card.aiLocPct }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">

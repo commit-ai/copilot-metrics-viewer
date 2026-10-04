@@ -11,7 +11,7 @@
         density="compact"
         variant="outlined"
         hide-details
-        style="max-width: 280px;"
+        style="max-width: 360px;"
       />
     </v-card-title>
     <v-card-text>
@@ -83,7 +83,7 @@ interface MetricOption {
 }
 
 const METRIC_OPTIONS: MetricOption[] = [
-  { key: 'agentLocSharePct', label: 'AI LOC % (agent share)', format: 'pct' },
+  { key: 'agentLocSharePct', label: 'Agent share of Copilot-added LOC', format: 'pct' },
   { key: 'copilotAdoptionPct', label: 'Copilot adoption %', format: 'pct' },
   { key: 'agentAdoptionPct', label: 'Agent adoption %', format: 'pct' },
   { key: 'cliAdoptionPct', label: 'CLI adoption %', format: 'pct' },

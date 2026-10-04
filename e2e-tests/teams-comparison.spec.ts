@@ -87,8 +87,9 @@ test.describe('Teams Comparison tests', () => {
         await expect(dashboard.page.getByText('Model Usage (% of interactions) — by Team')).toBeVisible();
         await expect(dashboard.page.getByText('Team leaderboard', { exact: true })).toBeVisible();
         await expect(dashboard.page.getByText('Adoption heatmap', { exact: true })).toBeVisible();
-        await expect(dashboard.page.getByText('AI LOC % (agent share)', { exact: true }).first()).toBeVisible();
-        await expect(dashboard.page.getByText('AI LOC % (agent share) — over time', { exact: true })).toBeVisible();
+        await expect(dashboard.page.getByText('Agent share of Copilot-added LOC', { exact: true }).first()).toBeVisible();
+        await expect(dashboard.page.getByText('Agent share of Copilot-added LOC — over time', { exact: true })).toBeVisible();
+        await expect(dashboard.page.getByText('Current-membership view:', { exact: true })).toBeVisible();
         await expect(dashboard.page.getByText('AI lines of code', { exact: true })).toHaveCount(0);
         await expect(dashboard.page.getByText('AI LOC / person', { exact: true })).toHaveCount(0);
         await expect(dashboard.page.getByText('Merged PRs — team comparison', { exact: true })).toBeVisible();

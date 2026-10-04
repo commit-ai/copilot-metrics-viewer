@@ -134,18 +134,20 @@ describe('summarizeTeam', () => {
 });
 
 describe('agentLoc', () => {
-  it('counts only lines attributed to agent features', () => {
+  it('counts only direct file edits, not copied code blocks from agent chat', () => {
     const days = [
       day('2024-05-01', {
         loc_added_sum: 500,
         totals_by_feature: [
-          { feature: 'chat_panel_agent_mode', loc_added_sum: 200 },
-          { feature: 'code_completion', loc_added_sum: 300 },
+          { feature: 'agent_edit', loc_added_sum: 150 },
+          { feature: 'chat_panel_agent_mode', loc_added_sum: 50 },
+          { feature: 'code_completion', loc_added_sum: 200 },
+          { feature: 'chat_inline', loc_added_sum: 100 },
         ],
       } as Partial<ReportDayTotals>),
     ];
-    expect(agentLoc(days)).toBe(200);
-    expect(summarizeTeam(days, 5).agentLocSharePct).toBe(40);
+    expect(agentLoc(days)).toBe(150);
+    expect(summarizeTeam(days, 5).agentLocSharePct).toBe(30);
   });
 });
 

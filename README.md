@@ -59,7 +59,11 @@ Users can now filter metrics for custom date ranges up to 100 days, with an intu
 Select **one team** for a full deep-dive view with KPI tiles, time-series charts (acceptance rate, active users, feature usage, model usage), language and editor breakdowns, and a per-user activity table. Select **two or more teams** to compare them side by side.
 
 > [!NOTE]
-> GitHub's Copilot Usage Metrics API does not provide team-level endpoints. Team metrics are **derived** by fetching per-user daily metrics from the organization/enterprise endpoint, resolving team membership via the GitHub Teams API, and aggregating per-user data in-memory. This works in both Direct API mode (28-day window) and Historical mode (full history).
+> GitHub does not provide a pre-aggregated team usage report. This application's team metrics are a **current-membership view**: per-user daily activity is filtered to members returned by the GitHub Teams API at request time. This works in Direct API mode and Historical mode, but it is not a membership-at-the-time historical report.
+>
+> [GitHub's historical team recipe](https://docs.github.com/en/copilot/reference/copilot-usage-metrics/team-level-metrics) joins each day's user-teams and per-user activity reports on `(user_id, day, organization_id/enterprise_id)` before rolling up. We do not currently fetch or persist those daily membership reports, so membership changes can misattribute earlier activity in this dashboard. The official user-teams reports omit teams with fewer than 5 seated Copilot users; our current-membership view can include those smaller teams and must not be mistaken for that official join.
+>
+> Users on multiple teams contribute to each team. Team totals must not be summed to derive organization totals. Distinct-user windows are computed from per-user records, not by adding daily active-user counts.
 
 **Single team deep dive:**
 <p align="center">
@@ -75,11 +79,11 @@ Select **one team** for a full deep-dive view with KPI tiles, time-series charts
 
 Both the deep-dive and comparison views include team-level AI contribution and adoption reporting.
 
-**AI contribution scorecards** — per team: AI LOC % (agent share), Copilot / agent / CLI adoption, and VS Code agent users. Raw LOC counts and LOC-per-person metrics are intentionally omitted.
+**AI contribution scorecards** — per team: Agent share of Copilot-added LOC, Copilot / agent / CLI adoption, and VS Code agent users. Raw LOC counts and LOC-per-person metrics are intentionally omitted.
 
-**AI LOC % trend chart** — daily agent-written LOC as a percentage of Copilot-tracked LOC, with one line per selected team. Days without tracked LOC are gaps rather than zeroes.
+**Agent share of Copilot-added LOC trend chart** — direct Agent/Edit-mode file additions as a percentage of all Copilot-added lines, with one line per selected team. Days without tracked LOC are gaps rather than zeroes.
 
-**Team leaderboard** — ranks the selected teams by AI LOC % (agent share) by default, with a trend arrow comparing the later half of the selected range against the earlier half.
+**Team leaderboard** — ranks the selected teams by Agent share of Copilot-added LOC by default, with a trend arrow comparing the later half of the selected range against the earlier half.
 
 **Adoption heatmap** — weekly adoption percentage per team, with a summary naming the highest- and lowest-adoption teams.
 
@@ -91,7 +95,7 @@ All comparison metrics are expressed as percentages or per-person figures so tha
 
 | Metric | Source | Calculation |
 | --- | --- | --- |
-| AI LOC % (agent share) | `totals_by_feature` for `chat_panel_agent_mode` and `agent_edit` | Agent LOC ÷ total Copilot LOC; weighted by LOC across the selected range |
+| Agent share of Copilot-added LOC | `totals_by_feature` for `agent_edit` only | Sum of direct-file `loc_added_sum` ÷ sum of top-level Copilot `loc_added_sum`, multiplied by 100 |
 | Acceptance rate | `code_acceptance_activity_count` ÷ `code_generation_activity_count` | Weighted across the range, not a mean of daily rates |
 | Copilot / agent / CLI / VS Code agent adoption | Rolling distinct-user windows computed server-side | Distinct users ÷ team member count |
 | Editor & model usage | `totals_by_ide` / `totals_by_model_feature` | Share of each team's own interactions |
@@ -99,9 +103,10 @@ All comparison metrics are expressed as percentages or per-person figures so tha
 
 Assumptions worth knowing:
 
-- **"% of total LOC attributed to AI" means share of Copilot-tracked LOC.** The Copilot API reports no human-authored line counts, so there is no denominator for a true "all code written by the team" percentage. The dashboard reports the agent share of Copilot's *own* output instead.
+- **Agent share is not "% of all code written by AI."** The Copilot API reports no human-authored line counts. The numerator is `agent_edit` additions, including direct file edits from both Agent and Edit mode; the denominator includes all Copilot additions (accepted completions, chat-panel copy/apply actions, inline chat and direct file edits). `chat_panel_agent_mode` copy/apply additions remain in the denominator, not the numerator. Deletions and suggestions are excluded. These are editor events, not retained or merged code, and IDE telemetry/version coverage affects them. See [LoC definitions](https://docs.github.com/en/copilot/reference/copilot-usage-metrics/lines-of-code-metrics).
+- **Both Teams and Agent Activity use the same added-lines share.** Agent Activity previously showed a changed-lines share including deletions; its other added/deleted volume charts remain unchanged in purpose. Missing added LOC produces an em dash or a chart gap, not 0% contribution.
 - **Adoption denominators are current team members**, not licensed seats. A team whose member count cannot be resolved shows an em dash rather than a misleading zero.
-- **Adoption percentages saturate at 100%.** Rolling windows count everyone active during the window, including people who have since left the team, so the raw ratio can exceed the current member count.
+- **Adoption percentages saturate at 100% as a display guard**, not a fix for membership attribution. The team aggregation filters historical activity to current members; it cannot tell which teams a user belonged to on an earlier day.
 - **Adoption numerators come from rolling windows** (7-day for ranges up to a week, 28-day otherwise), read from the last day in range. Per-day report rows expose active-user *counts*, never identities, so distinct users across an arbitrary range cannot be recomputed on the client — and exposing identities would conflict with the per-user privacy gate.
 - **Trends compare the later half of the selected range against the earlier half**, not a separately fetched preceding period. This avoids doubling every team's API cost and is labelled as such in the UI.
 - **VS Code agents-window usage is an approximation.** The API exposes `totals_by_ide` and `totals_by_feature` separately with no IDE × feature cross-product, so a user counts when they have a VS Code entry *and* agent usage on the same day.

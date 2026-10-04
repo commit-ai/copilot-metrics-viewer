@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TeamAiLocTrend from '../app/components/TeamAiLocTrend.vue';
 import TeamPrWeekly from '../app/components/TeamPrWeekly.vue';
+import AgentActivityViewer from '../app/components/AgentActivityViewer.vue';
 import type { ReportDayTotals } from '../server/services/github-copilot-usage-api';
 import type { TeamPrMetrics } from '../server/services/team-pr-search';
 
@@ -37,6 +38,27 @@ const metrics: TeamPrMetrics = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('team AI UI', () => {
+  it('uses direct added LOC, not added plus deleted LOC or agent-chat blocks, in Agent Activity', async () => {
+    const record = day('2026-10-04', 100, 25);
+    record.loc_deleted_sum = 50;
+    record.totals_by_feature[0]!.loc_deleted_sum = 50;
+    record.totals_by_feature.push({ ...record.totals_by_feature[0]!, feature: 'chat_panel_agent_mode', loc_added_sum: 15, loc_deleted_sum: 0 });
+    record.totals_by_feature.push({ ...record.totals_by_feature[0]!, feature: 'chat_panel_edit_mode', loc_added_sum: 10, loc_deleted_sum: 0 });
+    const wrapper = await mountSuspended(AgentActivityViewer, { props: { reportData: [record] } });
+    expect(wrapper.get('[data-testid="agent-loc-share"]').text()).toContain('Agent share of Copilot-added LOC');
+    expect(wrapper.get('[data-testid="agent-loc-share"]').text()).toContain('25.0%');
+    expect(wrapper.get('[data-testid="agent-loc-share"]').text()).toContain('25 of 100 added lines');
+    const userModes = wrapper.findAllComponents({ name: 'TestChart' })
+      .map(chart => chart.props('data')).find(data => data.labels.includes('Edit'));
+    expect(userModes.labels).toEqual(['Agent', 'Edit']);
+    expect(userModes.datasets.find((dataset: { label: string }) => dataset.label === 'Added').data).toEqual([15, 10]);
+    await wrapper.setProps({ reportData: [day('2026-10-04', 0, 0)] });
+    expect(wrapper.get('[data-testid="agent-loc-share"]').text()).toContain('—');
+    await wrapper.setProps({ reportData: [] });
+    expect(wrapper.get('[data-testid="agent-loc-share"]').text()).toContain('—');
+    wrapper.unmount();
+  });
+
   it('charts daily LOC percentages and leaves zero-denominator days as gaps', async () => {
     const wrapper = await mountSuspended(TeamAiLocTrend, {
       props: { teams: [{

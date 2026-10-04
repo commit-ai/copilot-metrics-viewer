@@ -57,9 +57,9 @@ export default defineComponent({
           memberCount: team.memberCount,
           stats: [
             {
-              label: 'AI LOC % (agent share)',
+              label: 'Agent share of Copilot-added LOC',
               value: pct(summary.agentLocSharePct),
-              tooltip: 'Share of Copilot-written lines produced by agent features. The denominator is Copilot output, not all code the team wrote — GitHub reports no human-authored line counts.',
+              tooltip: 'Direct Agent/Edit-mode file additions (agent_edit) divided by all Copilot-added lines. Chat-panel copy/apply actions, including Agent chat, are not direct agent edits. Excludes deletions and manually written code.',
             },
             {
               label: 'Copilot adoption',
