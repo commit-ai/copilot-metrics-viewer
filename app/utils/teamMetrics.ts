@@ -1,6 +1,17 @@
 import type { ReportDayTotals } from '../../server/services/github-copilot-usage-api';
 
 export interface TeamMetricSummary {
+  /** Lines of code added by Copilot over the range. */
+  aiLoc: number;
+  /** {@link aiLoc} per team member; null when the team size is unknown. */
+  aiLocPerPerson: number | null;
+  /**
+   * Share of Copilot-added lines from direct Agent/Edit-mode file edits.
+   *
+   * NOTE: the denominator is Copilot's own output, NOT all code the team
+   * wrote — the Copilot API reports no human-authored line counts.
+   */
+  agentLocSharePct: number | null;
   activeUsers: number;
   activeUsersPct: number | null;
   copilotAdoptionPct: number | null;
@@ -40,7 +51,20 @@ function rollingUsers(
   return (last[key] as number | undefined) ?? (last[monthlyKey] as number | undefined) ?? 0;
 }
 
+/** Direct Agent/Edit-mode file additions; excludes code blocks copied from chat. */
+export function agentLoc(days: ReportDayTotals[]): number {
+  return days.reduce((total, day) => {
+    const agentFeatures = (day.totals_by_feature ?? []).filter(f => f.feature === 'agent_edit');
+    return total + agentFeatures.reduce((sum, f) => sum + (f.loc_added_sum || 0), 0);
+  }, 0);
+}
+
+export function agentLocSharePct(days: ReportDayTotals[]): number | null {
+  return safePct(agentLoc(days), sumBy(days, day => day.loc_added_sum));
+}
+
 export function summarizeTeam(days: ReportDayTotals[], memberCount: number): TeamMetricSummary {
+  const aiLoc = sumBy(days, d => d.loc_added_sum);
   const activeUsers = lastDay(days)?.daily_active_users ?? 0;
   const generations = sumBy(days, day => day.code_generation_activity_count);
   const acceptances = sumBy(days, day => day.code_acceptance_activity_count);
@@ -52,6 +76,9 @@ export function summarizeTeam(days: ReportDayTotals[], memberCount: number): Tea
   );
 
   return {
+    aiLoc,
+    aiLocPerPerson: memberCount > 0 ? aiLoc / memberCount : null,
+    agentLocSharePct: agentLocSharePct(days),
     activeUsers,
     activeUsersPct: adoptionPct(activeUsers, memberCount),
     copilotAdoptionPct: adoptionPct(copilotUsers, memberCount),

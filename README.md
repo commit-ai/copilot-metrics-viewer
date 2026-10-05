@@ -81,11 +81,25 @@ Select **one team** for a full deep-dive view with KPI tiles, time-series charts
 
 #### Team Adoption Comparisons
 
-The comparison view normalizes editor and model interactions to each team's share of its own activity, and ranks teams by Copilot adoption by default. The leaderboard also compares agent adoption, CLI adoption, daily active users and acceptance rate; its trend compares the later half of the selected range with the earlier half.
+The comparison view normalizes editor and model interactions to each team's share of its own activity, and ranks teams by Agent share of Copilot-added LOC by default. The leaderboard also compares Copilot adoption, agent adoption, CLI adoption, daily active users and acceptance rate; its trend compares the later half of the selected range with the earlier half.
 
 The adoption heatmap shows weekly Copilot, agent, CLI or approximate VS Code agent adoption. Scorecards include Copilot, agent and CLI adoption plus VS Code agent users. Adoption percentages use the **current team-member count**, not licensed seats, and are capped at 100% for display. Unknown team sizes show an em dash rather than a percentage.
 
 Adoption uses rolling distinct-user counts from the last report day: 7-day counts for ranges of up to a week and 28-day counts for longer ranges. Trends compare halves of the selected range rather than fetching a preceding period. VS Code agent users are an approximation because the API has no editor-by-feature cross-tabulation. Membership changes can misattribute historical activity, and users in overlapping teams appear in each team; do not sum team totals into organization totals.
+
+#### Agent Share of Copilot-Added LOC
+
+**AI contribution scorecards** — per team: Agent share of Copilot-added LOC, Copilot / agent / CLI adoption, and VS Code agent users. Raw LOC counts and LOC-per-person metrics are intentionally omitted.
+
+**Agent share of Copilot-added LOC trend chart** — direct Agent/Edit-mode file additions as a percentage of all Copilot-added lines, with one line per selected team. Days without tracked LOC are gaps rather than zeroes.
+
+| Metric | Source | Calculation |
+| --- | --- | --- |
+| Agent share of Copilot-added LOC | `totals_by_feature` for `agent_edit` only | Sum of direct-file `loc_added_sum` ÷ sum of top-level Copilot `loc_added_sum`, multiplied by 100 |
+
+- **Agent share is not "% of all code written by AI."** The Copilot API reports no human-authored line counts. The numerator is `agent_edit` additions, including direct file edits from both Agent and Edit mode; the denominator includes all Copilot additions (accepted completions, chat-panel copy/apply actions, inline chat and direct file edits). `chat_panel_agent_mode` copy/apply additions remain in the denominator, not the numerator. Deletions and suggestions are excluded. These are editor events, not retained or merged code, and IDE telemetry/version coverage affects them. See [LoC definitions](https://docs.github.com/en/copilot/reference/copilot-usage-metrics/lines-of-code-metrics).
+- **Both Teams and Agent Activity use the same added-lines share.** Agent Activity previously showed a changed-lines share including deletions; its other added/deleted volume charts remain unchanged in purpose. Missing added LOC produces an em dash or a chart gap, not 0% contribution.
+- **Adoption percentages saturate at 100% as a display guard**, not a fix for membership attribution. The team aggregation filters historical activity to current members; it cannot tell which teams a user belonged to on an earlier day.
 
 #### Team-Scoped Direct URLs
 

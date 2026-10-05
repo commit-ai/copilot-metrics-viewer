@@ -72,9 +72,10 @@ export interface LeaderboardTeam {
   color: string;
 }
 
-type MetricKey = 'copilotAdoptionPct' | 'agentAdoptionPct' | 'cliAdoptionPct' | 'activeUsersPct' | 'acceptanceRatePct';
+type MetricKey = 'agentLocSharePct' | 'copilotAdoptionPct' | 'agentAdoptionPct' | 'cliAdoptionPct' | 'activeUsersPct' | 'acceptanceRatePct';
 type MetricOption = { key: MetricKey; label: string };
 const METRIC_OPTIONS: MetricOption[] = [
+  { key: 'agentLocSharePct', label: 'Agent share of Copilot-added LOC' },
   { key: 'copilotAdoptionPct', label: 'Copilot adoption %' },
   { key: 'agentAdoptionPct', label: 'Agent adoption %' },
   { key: 'cliAdoptionPct', label: 'CLI adoption %' },
@@ -88,7 +89,7 @@ export default defineComponent({
     teams: { type: Array as PropType<LeaderboardTeam[]>, required: true },
   },
   setup(props) {
-    const selectedMetric = ref<MetricKey>('copilotAdoptionPct');
+    const selectedMetric = ref<MetricKey>('agentLocSharePct');
     const activeMetric = computed(
       () => METRIC_OPTIONS.find(option => option.key === selectedMetric.value) ?? METRIC_OPTIONS[0]!
     );

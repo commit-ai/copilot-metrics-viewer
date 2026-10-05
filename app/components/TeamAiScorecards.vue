@@ -50,6 +50,11 @@ export default defineComponent({
           ...team,
           stats: [
             {
+              label: 'Agent share of Copilot-added LOC',
+              value: pct(summary.agentLocSharePct),
+              tooltip: 'Direct Agent/Edit-mode file additions (agent_edit) divided by all Copilot-added lines. Chat-panel copy/apply actions, including Agent chat, are not direct agent edits. Excludes deletions and manually written code.',
+            },
+            {
               label: 'Copilot adoption',
               value: pct(summary.copilotAdoptionPct),
               tooltip: 'Distinct Copilot users in the rolling window, as a share of current team members.',

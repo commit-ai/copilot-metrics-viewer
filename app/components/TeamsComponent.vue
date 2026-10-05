@@ -244,6 +244,9 @@
           <v-col cols="12">
             <TeamAiScorecards :teams="comparisonTeams" />
           </v-col>
+          <v-col cols="12">
+            <TeamAiLocTrend :teams="comparisonTeams" />
+          </v-col>
         </v-row>
         <div class="d-flex justify-end mb-3">
           <v-btn-toggle v-model="chartColumns" density="compact" variant="outlined" mandatory>
@@ -456,6 +459,10 @@
                 <span class="font-weight-medium">{{ card.cliAdoptionPct }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
+                <span>Agent share of Copilot-added LOC</span>
+                <span class="font-weight-medium">{{ card.aiLocPct }}</span>
+              </div>
+              <div class="d-flex justify-space-between text-caption text-medium-emphasis">
                 <span>Acceptance Rate</span>
                 <span class="font-weight-medium">{{ card.acceptanceRate }}</span>
               </div>
@@ -502,6 +509,12 @@
           </v-col>
         </v-row>
 
+        <v-row class="mt-2">
+          <v-col cols="12">
+            <TeamAiLocTrend :teams="comparisonTeams" />
+          </v-col>
+        </v-row>
+
         <!-- Row 2: Editor share | Model share (normalized per team) -->
         <v-row class="mt-2">
           <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
@@ -542,7 +555,7 @@
         </v-row>
         <v-row class="mt-2">
           <v-col cols="12">
-            <h3 class="text-subtitle-1 font-weight-medium mb-2">AI adoption scorecards</h3>
+            <h3 class="text-subtitle-1 font-weight-medium mb-2">AI contribution scorecards</h3>
             <TeamAiScorecards :teams="comparisonTeams" />
           </v-col>
         </v-row>
@@ -599,6 +612,7 @@ import {
 } from 'chart.js'
 import { buildReportsToUrl } from '@/utils/routeUtils'
 import { summarizeTeam, adoptionPct, editorSharePct, modelSharePct } from '@/utils/teamMetrics'
+import TeamAiLocTrend from './TeamAiLocTrend.vue'
 import TeamAiScorecards from './TeamAiScorecards.vue'
 import TeamLeaderboard from './TeamLeaderboard.vue'
 import TeamAdoptionHeatmap from './TeamAdoptionHeatmap.vue'
@@ -669,7 +683,7 @@ export default defineComponent({
   name: 'TeamsComponent',
   components: {
     LineChart, BarChart, Doughnut, ReportsToFilter,
-    TeamAiScorecards, TeamLeaderboard, TeamAdoptionHeatmap
+    TeamAiScorecards, TeamLeaderboard, TeamAdoptionHeatmap, TeamAiLocTrend
   },
   props: {
     dateRange: { type: Object as PropType<DateRange>, required: false, default: () => ({}) },
@@ -1284,6 +1298,7 @@ export default defineComponent({
           copilotAdoptionPct: fmtPct(summary.copilotAdoptionPct),
           agentAdoptionPct: fmtPct(summary.agentAdoptionPct),
           cliAdoptionPct: fmtPct(summary.cliAdoptionPct),
+          aiLocPct: fmtPct(summary.agentLocSharePct),
           totalInteractions: summary.totalInteractions,
           color
         }

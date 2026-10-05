@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  adoptionPct, editorSharePct, modelSharePct, summarizeTeam,
+  adoptionPct, agentLoc, editorSharePct, modelSharePct, summarizeTeam,
   trendWithinRange, weekStartOf, weeklyAdoption,
 } from '../app/utils/teamMetrics';
 import type { ReportDayTotals } from '../server/services/github-copilot-usage-api';
@@ -14,6 +14,7 @@ function day(date: string, overrides: Partial<ReportDayTotals> = {}): ReportDayT
     user_initiated_interaction_count: 0,
     code_generation_activity_count: 0,
     code_acceptance_activity_count: 0,
+    loc_added_sum: 0,
     ...overrides,
   } as ReportDayTotals;
 }
@@ -23,6 +24,47 @@ describe('team adoption', () => {
     expect(adoptionPct(12, 8)).toBe(100);
     expect(adoptionPct(2, 8)).toBe(25);
     expect(adoptionPct(2, 0)).toBeNull();
+  });
+
+  describe('team LOC', () => {
+    it('sums lines of code and per-person figures over the range', () => {
+      const summary = summarizeTeam([
+        day('2024-05-01', { loc_added_sum: 100 }),
+        day('2024-05-02', { loc_added_sum: 300 }),
+      ], 10);
+      expect(summary.aiLoc).toBe(400);
+      expect(summary.aiLocPerPerson).toBe(40);
+    });
+
+    it('handles an empty range without dividing by zero', () => {
+      const summary = summarizeTeam([], 10);
+      expect(summary.aiLoc).toBe(0);
+      expect(summary.activeUsers).toBe(0);
+      expect(summary.acceptanceRatePct).toBeNull();
+      expect(summary.agentLocSharePct).toBeNull();
+    });
+
+    it('returns null per-person LOC when the member count is unknown', () => {
+      expect(summarizeTeam([day('2024-05-01', { loc_added_sum: 100 })], 0).aiLocPerPerson).toBeNull();
+    });
+  });
+
+  describe('agentLoc', () => {
+    it('counts only direct file edits, not copied code blocks from agent chat', () => {
+      const days = [
+        day('2024-05-01', {
+          loc_added_sum: 500,
+          totals_by_feature: [
+            { feature: 'agent_edit', loc_added_sum: 150 },
+            { feature: 'chat_panel_agent_mode', loc_added_sum: 50 },
+            { feature: 'code_completion', loc_added_sum: 200 },
+            { feature: 'chat_inline', loc_added_sum: 100 },
+          ],
+        } as Partial<ReportDayTotals>),
+      ];
+      expect(agentLoc(days)).toBe(150);
+      expect(summarizeTeam(days, 5).agentLocSharePct).toBe(30);
+    });
   });
 
   it('uses the latest rolling window and current-member denominator', () => {
@@ -86,6 +128,55 @@ describe('team trends and weekly adoption', () => {
       day('2024-05-01'),
       day('2024-05-02', { weekly_active_users: 2 } as Partial<ReportDayTotals>),
     ], adoption, 4)).toEqual({ direction: 'up', changePct: null });
+  });
+
+  describe('LOC trendWithinRange', () => {
+    const locOf = (s: { aiLoc: number }) => s.aiLoc;
+
+    it('reports an upward trend when the later half is larger', () => {
+      const days = [
+        day('2024-05-01', { loc_added_sum: 10 }),
+        day('2024-05-02', { loc_added_sum: 20 }),
+      ];
+      const trend = trendWithinRange(days, locOf, 5);
+      expect(trend.direction).toBe('up');
+      expect(trend.changePct).toBe(100);
+    });
+
+    it('reports a downward trend when the later half is smaller', () => {
+      const days = [
+        day('2024-05-01', { loc_added_sum: 20 }),
+        day('2024-05-02', { loc_added_sum: 5 }),
+      ];
+      expect(trendWithinRange(days, locOf, 5).direction).toBe('down');
+    });
+
+    it('is flat for equal halves and for a single day', () => {
+      const equal = [
+        day('2024-05-01', { loc_added_sum: 10 }),
+        day('2024-05-02', { loc_added_sum: 10 }),
+      ];
+      expect(trendWithinRange(equal, locOf, 5)).toEqual({ direction: 'flat', changePct: 0 });
+      expect(trendWithinRange([day('2024-05-01')], locOf, 5).direction).toBe('flat');
+    });
+
+    it('avoids dividing by a zero baseline', () => {
+      const days = [
+        day('2024-05-01', { loc_added_sum: 0 }),
+        day('2024-05-02', { loc_added_sum: 50 }),
+      ];
+      const trend = trendWithinRange(days, locOf, 5);
+      expect(trend.direction).toBe('up');
+      expect(trend.changePct).toBeNull();
+    });
+
+    it('sorts unordered days before splitting the range', () => {
+      const unordered = [
+        day('2024-05-02', { loc_added_sum: 40 }),
+        day('2024-05-01', { loc_added_sum: 10 }),
+      ];
+      expect(trendWithinRange(unordered, locOf, 5).direction).toBe('up');
+    });
   });
 
   it('reports declining and flat trends', () => {
