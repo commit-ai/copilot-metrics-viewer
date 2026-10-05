@@ -149,14 +149,20 @@ describe('getMetricsDataV2 — historical mode team path (regression for 500 bug
     expect(result).toBeDefined();
     expect(result).toHaveProperty('metrics');
     expect(Array.isArray(result.metrics)).toBe(true);
+    expect(result.teamMemberCount).toBe(2);
+    expect(mockFetchAllTeamMembers).toHaveBeenCalledTimes(1);
+    expect(result.reportData).toHaveLength(28);
+    expect(result.reportData[0]?.day).toBe('2026-03-01');
+    expect(result.reportData.at(-1)?.day).toBe('2026-03-28');
 
     // getUserDayMetricsByDateRange must have been called (was the missing call)
     expect(mockGetUserDayMetrics).toHaveBeenCalledWith(
       'organization',
       'test-org',
-      '2026-03-01',
+      '2026-02-02',
       '2026-03-28',
     );
+    expect(result.teamMemberCount).toBe(2);
   });
 
   it('throws 401 (not 500/ReferenceError) when DB is empty and no auth token', async () => {
@@ -177,6 +183,7 @@ describe('getMetricsDataV2 — historical mode team path (regression for 500 bug
 
     expect(result.metrics).toEqual([]);
     expect(result.reportData).toEqual([]);
+    expect(result.teamMemberCount).toBe(0);
     // DB should NOT be queried when team is empty
     expect(mockGetUserDayMetrics).not.toHaveBeenCalled();
   });
@@ -198,8 +205,10 @@ describe('getMetricsDataV2 — historical mode team path (regression for 500 bug
     try {
       const { getMetricsDataV2 } = await import('../shared/utils/metrics-util-v2');
       const result = await getMetricsDataV2(makeEvent(false));
-      expect(result.reportData[0]?.daily_active_users).toBe(2);
-      expect(result.reportData[0]?.loc_added_sum).toBe(300);
+      const activeDay = result.reportData.find(day => day.day === '2026-03-15');
+      expect(activeDay?.daily_active_users).toBe(2);
+      expect(activeDay?.loc_added_sum).toBe(300);
+      expect(result.teamMemberCount).toBe(2);
       expect(rawRecords).toHaveBeenCalled();
     } finally {
       rawRecords.mockRestore();

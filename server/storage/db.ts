@@ -141,11 +141,25 @@ export async function initSchema(): Promise<void> {
       team_slug     TEXT NOT NULL,
       since_date    DATE NOT NULL,
       until_date    DATE NOT NULL,
+      auth_scope    TEXT NOT NULL DEFAULT '',
       data          JSONB NOT NULL,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (scope, identifier, team_slug, since_date, until_date)
+      UNIQUE (scope, identifier, team_slug, since_date, until_date, auth_scope)
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE team_pr_metrics
+    ADD COLUMN IF NOT EXISTS auth_scope TEXT NOT NULL DEFAULT '';
+  `);
+  await pool.query(`
+    ALTER TABLE team_pr_metrics
+    DROP CONSTRAINT IF EXISTS team_pr_metrics_scope_identifier_team_slug_since_date_until_dat;
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_team_pr_metrics_auth_key
+    ON team_pr_metrics (scope, identifier, team_slug, since_date, until_date, auth_scope);
   `);
 
   // ── Billing CSV ingest (Phase A) ───────────────────────────────────────────

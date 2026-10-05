@@ -23,7 +23,7 @@
 
 import type { ReportDayTotals } from '../../server/services/github-copilot-usage-api';
 
-/** Ranges longer than this use the 28-day rolling window for adoption. */
+/** Inclusive ranges up to this length use the 7-day rolling window. */
 const WEEKLY_WINDOW_MAX_DAYS = 7;
 
 export interface TeamMetricSummary {
@@ -93,9 +93,12 @@ function rollingUsers(
   weeklyKey: keyof ReportDayTotals,
   monthlyKey: keyof ReportDayTotals
 ): number {
-  const last = lastDay(days);
+  const sorted = [...days].sort((a, b) => a.day.localeCompare(b.day));
+  const last = sorted.at(-1);
   if (!last) return 0;
-  const key = days.length <= WEEKLY_WINDOW_MAX_DAYS ? weeklyKey : monthlyKey;
+  const first = sorted[0]!;
+  const rangeDays = (Date.parse(`${last.day}T00:00:00Z`) - Date.parse(`${first.day}T00:00:00Z`)) / 86400000 + 1;
+  const key = rangeDays <= WEEKLY_WINDOW_MAX_DAYS ? weeklyKey : monthlyKey;
   return (last[key] as number | undefined) ?? (last[monthlyKey] as number | undefined) ?? 0;
 }
 

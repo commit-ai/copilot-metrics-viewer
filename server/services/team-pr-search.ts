@@ -29,11 +29,12 @@ const MAX_SEARCH_QUERY_LENGTH = 256;
  */
 const MAX_AUTHOR_CHUNKS = 12;
 
-/** Login of the Copilot coding agent as it appears as a PR author. */
-export const COPILOT_AGENT_AUTHOR = 'Copilot';
+/** GitHub's special search identity for Copilot-authored or reviewed PRs. */
+export const COPILOT_AGENT_AUTHOR = '@copilot';
+export const COPILOT_REVIEWER = '@copilot';
 
-/** Login of the Copilot code review bot as it appears in `reviewed-by:`. */
-export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
+/** Search requests are capped at 90 days to keep the GraphQL document bounded. */
+export const MAX_RANGE_DAYS = 90;
 
 export interface WeekBucket {
   /** Inclusive first day of the bucket (clipped to the requested range). */
@@ -136,6 +137,25 @@ export function buildWeekBuckets(since: string, until: string): WeekBucket[] {
   return buckets;
 }
 
+function isIsoDate(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const date = new Date(`${day}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && toDayString(date) === day;
+}
+
+export function validateDateRange(since: string, until: string): void {
+  if (!isIsoDate(since) || !isIsoDate(until)) {
+    throw new RangeError('Dates must use valid YYYY-MM-DD format.');
+  }
+  if (since > until) {
+    throw new RangeError('The start date must be on or before the end date.');
+  }
+  const days = (toUtcDate(until).getTime() - toUtcDate(since).getTime()) / 86400000 + 1;
+  if (days > MAX_RANGE_DAYS) {
+    throw new RangeError(`Date range cannot exceed ${MAX_RANGE_DAYS} days.`);
+  }
+}
+
 /**
  * Group logins so that each chunk, once rendered into a search query, stays
  * under GitHub's 256-character limit. Chunks are disjoint, so per-chunk counts
@@ -147,15 +167,18 @@ export function chunkLogins(logins: string[], baseQueryLength: number): string[]
   let length = baseQueryLength;
 
   for (const login of logins) {
-    // "author:" prefix plus a separating space.
-    const cost = login.length + 8;
+    // Include the longest member qualifier and OR separator conservatively.
+    const cost = login.length + 9 + (current.length > 0 ? 4 : 0);
     if (current.length > 0 && length + cost > MAX_SEARCH_QUERY_LENGTH) {
       chunks.push(current);
       current = [];
       length = baseQueryLength;
     }
+    if (length + login.length + 9 > MAX_SEARCH_QUERY_LENGTH) {
+      throw new RangeError(`Team member login "${login}" cannot fit in a GitHub search query.`);
+    }
     current.push(login);
-    length += cost;
+    length += login.length + 9 + (current.length > 1 ? 4 : 0);
   }
   if (current.length > 0) chunks.push(current);
 
@@ -175,9 +198,9 @@ export function rollingAverage(weeks: WeekPrCounts[]): number {
   return total / considered.length;
 }
 
-/** Repeated qualifiers are OR-ed by GitHub search. */
 function qualifierList(qualifier: string, values: string[]): string {
-  return values.map(v => `${qualifier}:${v}`).join(' ');
+  if (values.length === 0) return '';
+  return `(${values.map(v => `${qualifier}:${v}`).join(' OR ')})`;
 }
 
 /**
@@ -206,16 +229,18 @@ export function buildBucketQueries(
   const assignees = qualifierList('assignee', logins);
 
   return {
-    merged: `${base} ${authors}`,
-    reviewed: `${base} ${authors} reviewed-by:${COPILOT_REVIEWER}`,
-    agent: `${base} ${assignees} author:${COPILOT_AGENT_AUTHOR}`,
+    merged: `${base}${authors ? ` ${authors}` : ''}`,
+    reviewed: `${base}${authors ? ` ${authors}` : ''} reviewed-by:${COPILOT_REVIEWER}`,
+    agent: `${base}${assignees ? ` ${assignees}` : ''} author:${COPILOT_AGENT_AUTHOR}`,
   };
 }
 
 /** Length of the fixed part of a search query, used to size author chunks. */
 export function baseQueryLength(bucket: WeekBucket, org: string | undefined): number {
-  // The `reviewed` variant is the longest, so size chunks against it.
-  return buildBucketQueries(bucket, [], org).reviewed.length;
+  const { weekStart, weekEnd } = bucket;
+  const base = ['is:pr', 'is:merged', `merged:${weekStart}..${weekEnd}`, ...(org ? [`org:${org}`] : [])].join(' ');
+  // Reserve grouping and the longer assignee prefix; `reviewed` has the longest fixed suffix.
+  return base.length + 1 + 2 + ' reviewed-by:@copilot'.length;
 }
 
 /**
@@ -315,10 +340,9 @@ export function retryAfterMinutes(
   return 1;
 }
 
-function isRateLimited(status: number, json: GraphQLSearchResponse): boolean {
+function isRateLimited(status: number, headers: Headers, json: GraphQLSearchResponse): boolean {
   if (status === 429) return true;
-  // GitHub returns 403 for secondary rate limits.
-  if (status === 403) return true;
+  if (status === 403 && (headers.has('retry-after') || headers.get('x-ratelimit-remaining') === '0')) return true;
   return (json.errors ?? []).some(e => e.type === 'RATE_LIMITED');
 }
 
@@ -344,6 +368,7 @@ export interface TeamPrSearchRequest {
 export async function fetchTeamPrMetrics(request: TeamPrSearchRequest): Promise<TeamPrMetrics> {
   const { logins, since, until, org, githubToken, apiBaseUrl = 'https://api.github.com' } = request;
 
+  validateDateRange(since, until);
   const buckets = buildWeekBuckets(since, until);
   const memberCount = logins.length;
 
@@ -366,7 +391,7 @@ export async function fetchTeamPrMetrics(request: TeamPrSearchRequest): Promise<
 
   const json = await response.json().catch(() => ({})) as GraphQLSearchResponse;
 
-  if (isRateLimited(response.status, json)) {
+  if (isRateLimited(response.status, response.headers, json)) {
     const resetAt = (json.data?.rateLimit as { resetAt?: string } | undefined)?.resetAt;
     throw new SearchRateLimitError(retryAfterMinutes(response.headers, resetAt));
   }
@@ -374,6 +399,9 @@ export async function fetchTeamPrMetrics(request: TeamPrSearchRequest): Promise<
   if (!response.ok || !json.data) {
     const detail = json.errors?.map(e => e.message).join('; ') || `HTTP ${response.status}`;
     throw new Error(`GitHub PR search failed: ${detail}`);
+  }
+  if (json.errors?.length) {
+    throw new Error(`GitHub PR search returned incomplete results: ${json.errors.map(e => e.message).join('; ')}`);
   }
 
   const weeks = collectCounts(json.data as Record<string, unknown>, buckets, chunks.length);

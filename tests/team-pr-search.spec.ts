@@ -21,6 +21,7 @@ import {
   SearchRateLimitError,
   COPILOT_AGENT_AUTHOR,
   COPILOT_REVIEWER,
+  validateDateRange,
   type WeekPrCounts,
 } from '../server/services/team-pr-search';
 
@@ -40,6 +41,21 @@ describe('buildWeekBuckets', () => {
     expect(buckets).toHaveLength(2);
     expect(buckets[0]).toEqual({ weekStart: '2026-02-02', weekEnd: '2026-02-08', partial: false });
     expect(buckets[1]).toEqual({ weekStart: '2026-02-09', weekEnd: '2026-02-15', partial: false });
+  });
+
+  describe('validateDateRange', () => {
+    it('accepts a valid ordered range at the supported maximum', () => {
+      expect(() => validateDateRange('2026-01-01', '2026-03-31')).not.toThrow();
+    });
+
+    it.each([
+      ['2026-02-30', '2026-03-01'],
+      ['2026/02/01', '2026-03-01'],
+      ['2026-03-02', '2026-03-01'],
+      ['2026-01-01', '2026-04-02'],
+    ])('rejects invalid, inverted, or oversized ranges: %s..%s', (since, until) => {
+      expect(() => validateDateRange(since, until)).toThrow(RangeError);
+    });
   });
 
   it('flags a clipped leading week as partial', () => {
@@ -135,8 +151,7 @@ describe('buildBucketQueries', () => {
     expect(merged).toContain('is:merged');
     expect(merged).toContain('merged:2026-02-02..2026-02-08');
     expect(merged).toContain('org:my-org');
-    expect(merged).toContain('author:alice');
-    expect(merged).toContain('author:bob');
+    expect(merged).toContain('(author:alice OR author:bob)');
   });
 
   it('adds the Copilot reviewer qualifier only to the reviewed variant', () => {
@@ -144,6 +159,14 @@ describe('buildBucketQueries', () => {
 
     expect(reviewed).toContain(`reviewed-by:${COPILOT_REVIEWER}`);
     expect(merged).not.toContain('reviewed-by:');
+  });
+
+  it('uses GitHub’s supported Copilot search identity', () => {
+    const { reviewed, agent } = buildBucketQueries(bucket, ['alice'], 'my-org');
+    expect(COPILOT_REVIEWER).toBe('@copilot');
+    expect(COPILOT_AGENT_AUTHOR).toBe('@copilot');
+    expect(reviewed).toContain('reviewed-by:@copilot');
+    expect(agent).toContain('author:@copilot');
   });
 
   it('matches agent PRs by assignee, not author, since the agent is the author', () => {
@@ -157,6 +180,11 @@ describe('buildBucketQueries', () => {
   it('omits the org qualifier when no org is known', () => {
     const { merged } = buildBucketQueries(bucket, ['alice'], undefined);
     expect(merged).not.toContain('org:');
+  });
+
+  it('ORs member assignees instead of requiring every member to match', () => {
+    const { agent } = buildBucketQueries(bucket, ['alice', 'bob'], 'my-org');
+    expect(agent).toContain('(assignee:alice OR assignee:bob)');
   });
 });
 
@@ -351,6 +379,27 @@ describe('fetchTeamPrMetrics', () => {
       mockResponse({ errors: [{ type: 'RATE_LIMITED', message: 'rate limited' }] })
     ));
 
+    await expect(fetchTeamPrMetrics(baseRequest)).rejects.toBeInstanceOf(SearchRateLimitError);
+  });
+
+  it('rejects partial GraphQL data instead of treating failed aliases as zero', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      mockResponse({ data: {}, errors: [{ message: 'Search field failed' }] })
+    ));
+    await expect(fetchTeamPrMetrics(baseRequest)).rejects.toThrow(/incomplete results/);
+  });
+
+  it('does not misclassify an authorization 403 as a rate limit', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      mockResponse({ message: 'Resource not accessible' }, { status: 403 })
+    ));
+    await expect(fetchTeamPrMetrics(baseRequest)).rejects.toThrow(/HTTP 403/);
+  });
+
+  it('recognizes a rate-limited 403 when GitHub supplies retry metadata', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      mockResponse({}, { status: 403, headers: { 'retry-after': '180' } })
+    ));
     await expect(fetchTeamPrMetrics(baseRequest)).rejects.toBeInstanceOf(SearchRateLimitError);
   });
 

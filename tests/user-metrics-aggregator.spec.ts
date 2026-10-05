@@ -168,6 +168,21 @@ describe('aggregateTeamMetrics', () => {
     expect(result.day_totals[2]!.day).toBe('2026-02-12');
   });
 
+  it('computes rolling adoption through the selected date using lookback records', () => {
+    const records = [
+      makeUser('alice', 1, '2026-04-01', { used_agent: true }),
+      makeUser('alice', 1, '2026-04-20'),
+    ];
+    const result = aggregateTeamMetrics(records, new Set(['alice']), {
+      since: '2026-04-20',
+      until: '2026-04-20',
+    });
+
+    const endDay = result.day_totals.find(day => day.day === '2026-04-20')!;
+    expect(endDay.weekly_active_agent_users).toBe(0);
+    expect(endDay.monthly_active_agent_users).toBe(1);
+  });
+
   it('sets report_start_day and report_end_day from day range', () => {
     const records = [
       makeUser('alice', 1, '2026-02-10'),

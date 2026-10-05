@@ -6,7 +6,7 @@
           <div class="team-swatch mr-2" :style="{ backgroundColor: card.color }" />
           <span class="text-subtitle-2 font-weight-bold text-truncate">{{ card.teamName }}</span>
         </div>
-        <div class="text-caption text-medium-emphasis mb-2">{{ card.memberCount }} members</div>
+        <div class="text-caption text-medium-emphasis mb-2">{{ card.memberCount > 0 ? `${card.memberCount} members` : '— members' }}</div>
 
         <div v-for="stat in card.stats" :key="stat.label" class="d-flex justify-space-between align-center py-1">
           <v-tooltip location="top" open-delay="200">

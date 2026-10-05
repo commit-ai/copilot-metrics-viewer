@@ -8,6 +8,7 @@
  */
 
 import type { TeamPrMetrics } from '../services/team-pr-search';
+import { createHash } from 'node:crypto';
 import { getPool } from './db';
 import { isDbConfigured } from './db-config';
 import { baseScope } from './user-day-metrics-storage';
@@ -25,12 +26,17 @@ interface CacheKey {
   teamSlug: string;
   since: string;
   until: string;
+  authScope: string;
 }
 
 const memoryCache = new Map<string, { data: TeamPrMetrics; expiry: number }>();
 
+export function teamPrCacheScope(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 function memoryKey(key: CacheKey): string {
-  return [baseScope(key.scope), key.identifier, key.teamSlug, key.since, key.until].join('|');
+  return [baseScope(key.scope), key.identifier, key.teamSlug, key.since, key.until, key.authScope].join('|');
 }
 
 export async function getCachedTeamPrMetrics(key: CacheKey): Promise<TeamPrMetrics | null> {
@@ -42,9 +48,9 @@ export async function getCachedTeamPrMetrics(key: CacheKey): Promise<TeamPrMetri
   const { rows } = await getPool().query<{ data: TeamPrMetrics }>(
     `SELECT data FROM team_pr_metrics
      WHERE scope = $1 AND identifier = $2 AND team_slug = $3
-       AND since_date = $4 AND until_date = $5
+       AND since_date = $4 AND until_date = $5 AND auth_scope = $6
        AND updated_at > NOW() - INTERVAL '1 hour'`,
-    [baseScope(key.scope), key.identifier, key.teamSlug, key.since, key.until]
+    [baseScope(key.scope), key.identifier, key.teamSlug, key.since, key.until, key.authScope]
   );
 
   return rows[0]?.data ?? null;
@@ -57,11 +63,11 @@ export async function saveTeamPrMetrics(key: CacheKey, data: TeamPrMetrics): Pro
   }
 
   await getPool().query(
-    `INSERT INTO team_pr_metrics (scope, identifier, team_slug, since_date, until_date, data)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (scope, identifier, team_slug, since_date, until_date)
+    `INSERT INTO team_pr_metrics (scope, identifier, team_slug, since_date, until_date, auth_scope, data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (scope, identifier, team_slug, since_date, until_date, auth_scope)
      DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
-    [baseScope(key.scope), key.identifier, key.teamSlug, key.since, key.until, JSON.stringify(data)]
+    [baseScope(key.scope), key.identifier, key.teamSlug, key.since, key.until, key.authScope, JSON.stringify(data)]
   );
 }
 

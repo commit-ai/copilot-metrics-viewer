@@ -3,7 +3,7 @@
  *
  * Deliberately NOT part of /api/metrics: it hits the rate-limited GitHub
  * search API, so it is only ever called when the user explicitly asks for PR
- * data in the Teams tab. Results are cached per (team, date range).
+ * data in the Teams tab. Results are cached per team, date range and auth scope.
  *
  * Responds 429 with `retryAfterMinutes` when GitHub rate limits the caller,
  * so the UI can say "come back in X minutes" instead of failing.
@@ -12,8 +12,8 @@
 import { Options, type Scope } from '@/model/Options';
 import { requireTeamMembershipOrAdmin } from '../utils/team-membership';
 import { fetchAllTeamMembers } from './seats';
-import { fetchTeamPrMetrics, SearchRateLimitError, buildWeekBuckets, rollingAverage, type TeamPrMetrics } from '../services/team-pr-search';
-import { getCachedTeamPrMetrics, saveTeamPrMetrics } from '../storage/team-pr-metrics-storage';
+import { fetchTeamPrMetrics, SearchRateLimitError, buildWeekBuckets, rollingAverage, validateDateRange, type TeamPrMetrics } from '../services/team-pr-search';
+import { getCachedTeamPrMetrics, saveTeamPrMetrics, teamPrCacheScope } from '../storage/team-pr-metrics-storage';
 
 /** Default reporting window, matching the rest of the dashboard. */
 const DEFAULT_RANGE_DAYS = 28;
@@ -50,6 +50,22 @@ export default defineEventHandler(async (event): Promise<TeamPrMetrics> => {
     throw createError({ statusCode: 400, statusMessage: 'team query parameter is required' });
   }
 
+  const fallback = defaultRange();
+  const since = options.since || fallback.since;
+  const until = options.until || fallback.until;
+  try {
+    validateDateRange(since, until);
+  } catch (error) {
+    throw createError({ statusCode: 400, statusMessage: error instanceof Error ? error.message : String(error) });
+  }
+
+  if (!options.isDataMocked && options.scope === 'enterprise' && !options.githubOrg) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Select an organization to scope enterprise team PR metrics.',
+    });
+  }
+
   // Same GDPR gate as /api/metrics — team-scoped data is not open to everyone.
   await requireTeamMembershipOrAdmin(
     event,
@@ -58,27 +74,31 @@ export default defineEventHandler(async (event): Promise<TeamPrMetrics> => {
     options.githubTeam,
   );
 
-  const fallback = defaultRange();
-  const since = options.since || fallback.since;
-  const until = options.until || fallback.until;
-  const identifier = options.githubOrg || options.githubEnt || '';
-  const cacheKey = { scope: options.scope || 'organization', identifier, teamSlug: options.githubTeam, since, until };
-
   if (options.isDataMocked) {
     const members = await fetchAllTeamMembers(options, event.context.headers);
     return mockMetrics(since, until, members.length, options.githubTeam);
   }
+
+  const githubToken = resolveToken(event, config.githubToken as string | undefined);
+  if (!githubToken) {
+    throw createError({ statusCode: 401, statusMessage: 'No Authentication provided' });
+  }
+
+  const identifier = options.githubOrg || options.githubEnt || '';
+  const cacheKey = {
+    scope: options.scope || 'organization',
+    identifier,
+    teamSlug: options.githubTeam,
+    since,
+    until,
+    authScope: teamPrCacheScope(githubToken),
+  };
 
   try {
     const cached = await getCachedTeamPrMetrics(cacheKey);
     if (cached) return cached;
   } catch (err) {
     logger.error('Team PR cache read failed (non-fatal):', err);
-  }
-
-  const githubToken = resolveToken(event, config.githubToken as string | undefined);
-  if (!githubToken) {
-    throw createError({ statusCode: 401, statusMessage: 'No Authentication provided' });
   }
 
   const members = await fetchAllTeamMembers(options, event.context.headers);

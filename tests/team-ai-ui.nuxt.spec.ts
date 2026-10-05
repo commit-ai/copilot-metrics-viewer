@@ -6,6 +6,7 @@ import TeamAiLocTrend from '../app/components/TeamAiLocTrend.vue';
 import TeamPrWeekly from '../app/components/TeamPrWeekly.vue';
 import AgentActivityViewer from '../app/components/AgentActivityViewer.vue';
 import TeamLeaderboard from '../app/components/TeamLeaderboard.vue';
+import TeamAiScorecards from '../app/components/TeamAiScorecards.vue';
 import type { ReportDayTotals } from '../server/services/github-copilot-usage-api';
 import type { TeamPrMetrics } from '../server/services/team-pr-search';
 
@@ -70,6 +71,15 @@ describe('team AI UI', () => {
     const data = wrapper.findComponent({ name: 'TestChart' }).props('data');
     expect(data.labels).toEqual(['2026-10-02', '2026-10-03', '2026-10-04']);
     expect(data.datasets[0].data).toEqual([25, null, 50]);
+    wrapper.unmount();
+  });
+
+  it('renders an unknown team size as unknown rather than zero members', async () => {
+    const wrapper = await mountSuspended(TeamAiScorecards, {
+      props: { teams: [{ slug: 'qa', teamName: 'QA Team', reportData: [], memberCount: 0, color: '#123456' }] },
+    });
+    expect(wrapper.text()).toContain('— members');
+    expect(wrapper.text()).not.toContain('0 members');
     wrapper.unmount();
   });
 

@@ -39,7 +39,8 @@ import { COMPLETION_FEATURES } from '../../shared/utils/feature-classification';
  */
 export function aggregateTeamMetrics(
   userRecords: UserDayRecord[],
-  teamLogins: Set<string>
+  teamLogins: Set<string>,
+  dateBounds?: { since?: string; until?: string },
 ): OrgReport {
   // Build case-insensitive login set for robust matching
   const normalizedLogins = new Set(Array.from(teamLogins).map(l => l.toLowerCase()));
@@ -57,7 +58,22 @@ export function aggregateTeamMetrics(
     byDay.set(record.day, existing);
   }
 
-  const sortedDays = Array.from(byDay.keys()).sort();
+  const daySet = new Set(byDay.keys());
+  if (dateBounds?.since && dateBounds.until && dateBounds.since <= dateBounds.until) {
+    const cursor = new Date(`${dateBounds.since}T00:00:00Z`);
+    const end = new Date(`${dateBounds.until}T00:00:00Z`);
+    const rangeDays = (end.getTime() - cursor.getTime()) / 86400000;
+    if (Number.isFinite(rangeDays) && rangeDays <= 366) {
+      for (; cursor <= end;) {
+        daySet.add(cursor.toISOString().split('T')[0]!);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+    } else if (Number.isFinite(rangeDays)) {
+      daySet.add(dateBounds.since);
+      daySet.add(dateBounds.until);
+    }
+  }
+  const sortedDays = Array.from(daySet).sort();
 
   // Pre-compute rolling window distinct-user sets per day so the day-level
   // aggregator can reflect proper 7-day / 28-day windows (bug #410).
@@ -65,7 +81,7 @@ export function aggregateTeamMetrics(
 
   // Aggregate each day
   const day_totals: ReportDayTotals[] = sortedDays.map(day =>
-    aggregateDayRecords(day, byDay.get(day)!, rollingCounts.get(day)!)
+    aggregateDayRecords(day, byDay.get(day) ?? [], rollingCounts.get(day)!)
   );
 
   const allDays = day_totals.map(d => d.day);

@@ -109,7 +109,7 @@ Assumptions worth knowing:
 - **Both Teams and Agent Activity use the same added-lines share.** Agent Activity previously showed a changed-lines share including deletions; its other added/deleted volume charts remain unchanged in purpose. Missing added LOC produces an em dash or a chart gap, not 0% contribution.
 - **Adoption denominators are current team members**, not licensed seats. A team whose member count cannot be resolved shows an em dash rather than a misleading zero.
 - **Adoption percentages saturate at 100% as a display guard**, not a fix for membership attribution. The team aggregation filters historical activity to current members; it cannot tell which teams a user belonged to on an earlier day.
-- **Adoption numerators come from rolling windows** (7-day for ranges up to a week, 28-day otherwise), read from the last day in range. Per-day report rows expose active-user *counts*, never identities, so distinct users across an arbitrary range cannot be recomputed on the client — and exposing identities would conflict with the per-user privacy gate.
+- **Adoption numerators come from rolling windows** (7-day for ranges up to a week, 28-day otherwise), read from the last day in the selected range. Historical team queries load the preceding 27 days before filtering display rows so monthly counts remain complete. Per-day report rows expose active-user *counts*, never identities, so distinct users across an arbitrary range cannot be recomputed on the client — and exposing identities would conflict with the per-user privacy gate.
 - **Trends compare the later half of the selected range against the earlier half**, not a separately fetched preceding period. This avoids doubling every team's API cost and is labelled as such in the UI.
 - **VS Code agents-window usage is an approximation.** The API exposes `totals_by_ide` and `totals_by_feature` separately with no IDE × feature cross-product, so a user counts when they have a VS Code entry *and* agent usage on the same day.
 - **Weeks start on Monday.** Partial weeks at either end of the range are flagged in the PR chart and excluded from the rolling average.
@@ -120,7 +120,8 @@ GitHub's Copilot metrics API reports pull request totals only for whole organiza
 
 - A PR counts as **AI-touched** when it was authored by the Copilot coding agent or reviewed by Copilot code review.
 - Member logins are chunked to stay under the search API's 256-character query limit, and all weeks and chunks are batched into a single GraphQL request using aliases.
-- Because search is rate limited, the panel loads **only when you click "Load PR data"**, and results are cached per team and date range (in PostgreSQL when `DATABASE_URL` is set, otherwise in memory for an hour).
+- Enterprise team PR results require selecting an organization; enterprise-wide teams are not silently counted across unrelated repositories. Requested ranges must be valid dates and are limited to 90 days.
+- Because search is rate limited, the panel loads **only when you click "Load PR data"**, and results are cached per team, date range, and authorization token scope (in PostgreSQL when `DATABASE_URL` is set, otherwise in memory for an hour).
 - If GitHub rate limits the request, the panel reports how many minutes to wait before retrying rather than failing silently.
 
 > [!NOTE]
