@@ -82,11 +82,30 @@ test.describe('Teams Comparison tests', () => {
         const devTeamCard = dashboard.page.getByText('Development Team', { exact: true }).first();
         await expect(devTeamCard).toBeVisible();
 
-        // Verify that comparison charts are displayed
-        const languageUsageChart = dashboard.page.getByText('Language Usage — by Team');
-        await expect(languageUsageChart).toBeVisible();
+        await expect(dashboard.page.getByText('Editor Usage (% of interactions) — by Team')).toBeVisible();
+        await expect(dashboard.page.getByText('Model Usage (% of interactions) — by Team')).toBeVisible();
+        await expect(dashboard.page.getByText('Team leaderboard', { exact: true })).toBeVisible();
+        await expect(dashboard.page.getByText('Adoption heatmap', { exact: true })).toBeVisible();
+        await expect(dashboard.page.getByText('Copilot adoption', { exact: true }).first()).toBeVisible();
+        await expect(dashboard.page.getByText('Current-membership view:', { exact: true })).toBeVisible();
+    });
 
-        const editorUsageChart = dashboard.page.getByText('Editor Usage — by Team');
-        await expect(editorUsageChart).toBeVisible();
+    test('QA team activity is filtered to its members', tag, async () => {
+        await dashboard.page.getByRole('button', { name: /^clear all$/i }).click();
+        const dropdown = dashboard.page.locator('[role="combobox"]').first();
+        await dropdown.click();
+        const responsePromise = dashboard.page.waitForResponse(response =>
+            response.url().includes('/api/metrics?') && new URL(response.url()).searchParams.get('githubTeam') === 'qa-team'
+        );
+        await dashboard.page.locator('[role="listbox"]').getByText('QA Team', { exact: true }).click();
+        const response = await responsePromise;
+        expect(response.ok()).toBe(true);
+        const data = await response.json();
+        expect(data.teamMemberCount).toBe(3);
+        expect(data.reportData.length).toBeGreaterThan(0);
+        expect(data.reportData.some((day: { daily_active_users: number }) => day.daily_active_users > 0)).toBe(true);
+        for (const day of data.reportData) {
+            expect(day.daily_active_users).toBeLessThanOrEqual(data.teamMemberCount);
+        }
     });
 });

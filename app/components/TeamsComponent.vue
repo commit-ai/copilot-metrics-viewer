@@ -22,6 +22,13 @@
       </div>
     </v-card>
 
+    <v-alert type="info" variant="tonal" density="compact" class="mx-4 mb-1">
+      <strong>Current-membership view:</strong> All days are filtered to today's team members, not membership on each activity day.
+      Historical team changes can affect attribution; overlapping teams must not be summed into organization totals.
+      GitHub's historical team recipe requires daily user-teams joins and excludes teams with fewer than 5 seated users.
+      <a href="https://docs.github.com/en/copilot/reference/copilot-usage-metrics/team-level-metrics" target="_blank" rel="noopener">Team-level metrics guidance</a>
+    </v-alert>
+
     <!-- Rate limit warning when not using historical/DB mode -->
     <v-alert
       v-if="!isHistoricalMode"
@@ -149,7 +156,7 @@
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
                 <span>Acceptance Rate</span>
-                <span class="font-weight-medium">{{ card.acceptanceRate }}%</span>
+                <span class="font-weight-medium">{{ card.acceptanceRate }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
                 <span>Interactions</span>
@@ -233,6 +240,11 @@
 
       <!-- Column toggle + Charts -->
       <v-container :fluid="chartColumns === 'full'" :class="['elevation-2 mt-1 mb-2', chartColumns === 'full' ? 'px-0' : 'px-4']">
+        <v-row v-if="!entraOnlyMode" class="mb-1">
+          <v-col cols="12">
+            <TeamAiScorecards :teams="comparisonTeams" />
+          </v-col>
+        </v-row>
         <div class="d-flex justify-end mb-3">
           <v-btn-toggle v-model="chartColumns" density="compact" variant="outlined" mandatory>
             <v-btn value="1" size="small" title="Single column"><v-icon size="18">mdi-view-agenda</v-icon></v-btn>
@@ -429,16 +441,29 @@
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
                 <span>Active Users</span>
-                <span class="font-weight-medium">{{ card.activeUsers }}</span>
+                <span class="font-weight-medium">{{ card.activeUsers }} ({{ card.activeUsersPct }})</span>
+              </div>
+              <div class="d-flex justify-space-between text-caption text-medium-emphasis">
+                <span>Copilot Adoption</span>
+                <span class="font-weight-medium">{{ card.copilotAdoptionPct }}</span>
+              </div>
+              <div class="d-flex justify-space-between text-caption text-medium-emphasis">
+                <span>Agent Adoption</span>
+                <span class="font-weight-medium">{{ card.agentAdoptionPct }}</span>
+              </div>
+              <div class="d-flex justify-space-between text-caption text-medium-emphasis">
+                <span>CLI Adoption</span>
+                <span class="font-weight-medium">{{ card.cliAdoptionPct }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
                 <span>Acceptance Rate</span>
-                <span class="font-weight-medium">{{ card.acceptanceRate }}%</span>
+                <span class="font-weight-medium">{{ card.acceptanceRate }}</span>
               </div>
               <div class="d-flex justify-space-between text-caption text-medium-emphasis">
                 <span>Interactions</span>
                 <span class="font-weight-medium">{{ card.totalInteractions.toLocaleString() }}</span>
               </div>
+              <div class="text-caption text-disabled mt-1">{{ card.memberCount || '—' }} members</div>
             </v-card>
           </v-col>
         </v-row>
@@ -466,35 +491,25 @@
           </v-col>
           <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
             <v-card class="pa-3">
-              <v-card-title class="text-subtitle-1 font-weight-medium pt-1 pb-2">Active Users — by Team</v-card-title>
+              <v-card-title class="text-subtitle-1 font-weight-medium pt-1 pb-2">Active Users (% of members) — by Team</v-card-title>
+              <v-card-subtitle class="pb-1 text-caption">
+                Daily active users as a share of team size. Teams whose size is unknown are dashed and use the right-hand count axis.
+              </v-card-subtitle>
               <div style="height:240px">
-                <LineChart :data="activeUsersChartData" :options="compactLineOptions" />
+                <LineChart :data="activeUsersChartData" :options="activeUsersOptions" />
               </div>
             </v-card>
           </v-col>
         </v-row>
 
-        <!-- Row 2: Language comparison | Editor comparison -->
+        <!-- Row 2: Editor share | Model share (normalized per team) -->
         <v-row class="mt-2">
           <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
             <v-card class="pa-3">
-              <v-card-title class="text-subtitle-1 font-weight-medium pt-1 pb-2">Language Usage — by Team</v-card-title>
-              <v-card-subtitle class="pb-1 text-caption">Code acceptance rate per language</v-card-subtitle>
-              <div v-if="languageBarChartData.datasets.length" style="height:280px">
-                <BarChart :data="languageBarChartData" :options="groupedBarOptions" />
-              </div>
-              <div v-else class="text-center text-medium-emphasis py-8">
-                <v-icon size="40" color="grey-lighten-1">mdi-chart-bar</v-icon>
-                <p class="mt-2 text-body-2">No language data available</p>
-              </div>
-            </v-card>
-          </v-col>
-          <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
-            <v-card class="pa-3">
-              <v-card-title class="text-subtitle-1 font-weight-medium pt-1 pb-2">Editor Usage — by Team</v-card-title>
-              <v-card-subtitle class="pb-1 text-caption">Total active users per editor</v-card-subtitle>
+              <v-card-title class="text-subtitle-1 font-weight-medium pt-1 pb-2">Editor Usage (% of interactions) — by Team</v-card-title>
+              <v-card-subtitle class="pb-1 text-caption">Share of each team's own interactions per editor</v-card-subtitle>
               <div v-if="editorBarChartData.datasets.length" style="height:280px">
-                <BarChart :data="editorBarChartData" :options="groupedBarOptions" />
+                <BarChart :data="editorBarChartData" :options="percentBarOptions" />
               </div>
               <div v-else class="text-center text-medium-emphasis py-8">
                 <v-icon size="40" color="grey-lighten-1">mdi-chart-bar</v-icon>
@@ -502,18 +517,33 @@
               </div>
             </v-card>
           </v-col>
-        </v-row>
-
-        <!-- Row 3: Models comparison -->
-        <v-row class="mt-2" v-if="comparisonModelsData.datasets.length">
-          <v-col cols="12">
+          <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
             <v-card class="pa-3">
-              <v-card-title class="text-subtitle-1 font-weight-medium pt-1 pb-2">Model Usage — by Team</v-card-title>
-              <v-card-subtitle class="pb-1 text-caption">Total interactions per model</v-card-subtitle>
-              <div style="height:260px">
-                <BarChart :data="comparisonModelsData" :options="groupedBarOptions" />
+              <v-card-title class="text-subtitle-1 font-weight-medium pt-1 pb-2">Model Usage (% of interactions) — by Team</v-card-title>
+              <v-card-subtitle class="pb-1 text-caption">Share of each team's own interactions per model</v-card-subtitle>
+              <div v-if="comparisonModelsData.datasets.length" style="height:280px">
+                <BarChart :data="comparisonModelsData" :options="percentBarOptions" />
+              </div>
+              <div v-else class="text-center text-medium-emphasis py-8">
+                <v-icon size="40" color="grey-lighten-1">mdi-chart-bar</v-icon>
+                <p class="mt-2 text-body-2">No model data available</p>
               </div>
             </v-card>
+          </v-col>
+        </v-row>
+
+        <v-row class="mt-2">
+          <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
+            <TeamLeaderboard :teams="comparisonTeams" />
+          </v-col>
+          <v-col cols="12" :md="chartColumns === '2' ? 6 : 12">
+            <TeamAdoptionHeatmap :teams="comparisonTeams" />
+          </v-col>
+        </v-row>
+        <v-row class="mt-2">
+          <v-col cols="12">
+            <h3 class="text-subtitle-1 font-weight-medium mb-2">AI adoption scorecards</h3>
+            <TeamAiScorecards :teams="comparisonTeams" />
           </v-col>
         </v-row>
       </v-container>
@@ -568,6 +598,10 @@ import {
   Legend
 } from 'chart.js'
 import { buildReportsToUrl } from '@/utils/routeUtils'
+import { summarizeTeam, adoptionPct, editorSharePct, modelSharePct } from '@/utils/teamMetrics'
+import TeamAiScorecards from './TeamAiScorecards.vue'
+import TeamLeaderboard from './TeamLeaderboard.vue'
+import TeamAdoptionHeatmap from './TeamAdoptionHeatmap.vue'
 
 const FEATURE_DISPLAY: Record<string, string> = {
   code_completion: 'Completions',
@@ -615,6 +649,7 @@ interface PerTeamData {
   metrics: Metrics[]
   usage: CopilotMetrics[]
   reportData: ReportDayTotals[]
+  memberCount: number
 }
 
 // Line metric keys for comparison mode
@@ -632,7 +667,10 @@ const DONUT_COLORS = ['#4BC0C0', '#9966FF', '#FF9F40', '#FF6384', '#36A2EB', '#F
 
 export default defineComponent({
   name: 'TeamsComponent',
-  components: { LineChart, BarChart, Doughnut, ReportsToFilter },
+  components: {
+    LineChart, BarChart, Doughnut, ReportsToFilter,
+    TeamAiScorecards, TeamLeaderboard, TeamAdoptionHeatmap
+  },
   props: {
     dateRange: { type: Object as PropType<DateRange>, required: false, default: () => ({}) },
     dateRangeDescription: { type: String, default: '' },
@@ -707,6 +745,48 @@ export default defineComponent({
         x: { ticks: { maxRotation: 30, autoSkip: true, font: { size: 10 } } }
       },
       plugins: { legend: { position: 'top' as const, labels: { boxWidth: 10, font: { size: 11 } } } },
+      layout: { padding: { left: 4, right: 4, top: 4, bottom: 4 } }
+    }
+
+    const percentBarOptions = {
+      ...groupedBarOptions,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          ticks: { callback: (value: string | number) => `${value}%` }
+        },
+        x: { ticks: { maxRotation: 30, autoSkip: true, font: { size: 10 } } }
+      },
+      plugins: {
+        ...groupedBarOptions.plugins,
+        tooltip: {
+          callbacks: {
+            label: (ctx: { dataset: { label?: string }; parsed: { y: number } }) =>
+              `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
+          }
+        }
+      }
+    }
+
+    const activeUsersOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          position: 'left' as const,
+          ticks: { callback: (value: string | number) => `${value}%` }
+        },
+        yCount: {
+          beginAtZero: true,
+          position: 'right' as const,
+          grid: { drawOnChartArea: false },
+          ticks: { precision: 0 }
+        }
+      },
+      plugins: { legend: { position: 'bottom' as const, labels: { boxWidth: 10, font: { size: 11 } } } },
       layout: { padding: { left: 4, right: 4, top: 4, bottom: 4 } }
     }
 
@@ -1063,7 +1143,8 @@ export default defineComponent({
           slug: '__entra__',
           metrics: (response.metrics as Metrics[]) || [],
           usage: (response.usage as CopilotMetrics[]) || [],
-          reportData: response.reportData || []
+          reportData: response.reportData || [],
+          memberCount: response.teamMemberCount ?? 0
         }
       } finally {
         entraOrgLoading.value = false
@@ -1172,51 +1253,66 @@ export default defineComponent({
     }
 
     // ── Comparison: per-team summary cards ────────────────────────────────────
+    const fmtPct = (value: number | null) => (value === null ? '—' : `${value.toFixed(1)}%`)
+
     const comparisonSummaryCards = computed(() => {
       return perTeamData.value.map((td, idx) => {
         const teamName = availableTeams.value.find(t => t.slug === td.slug)?.name || td.slug
+        const summary = summarizeTeam(td.reportData, td.memberCount)
 
-        let activeUsers = 0
-        if (td.reportData.length) {
-          const sorted = [...td.reportData].sort((a, b) => a.day.localeCompare(b.day))
-          activeUsers = sorted.at(-1)?.daily_active_users || 0
-        } else if (td.metrics.length) {
+        let activeUsers = summary.activeUsers
+        if (!td.reportData.length && td.metrics.length) {
           const sorted = [...td.metrics].sort((a, b) => a.day.localeCompare(b.day))
           activeUsers = sorted.at(-1)?.total_active_users || 0
         }
 
-        let totalGen = 0, totalAcc = 0
-        if (td.reportData.length) {
-          td.reportData.forEach(d => { totalGen += d.code_generation_activity_count || 0; totalAcc += d.code_acceptance_activity_count || 0 })
-        } else {
+        let acceptanceRate = summary.acceptanceRatePct
+        if (!td.reportData.length && td.metrics.length) {
+          let totalGen = 0, totalAcc = 0
           td.metrics.forEach(m => { totalGen += m.total_suggestions_count || 0; totalAcc += m.total_acceptances_count || 0 })
+          acceptanceRate = totalGen ? (totalAcc / totalGen) * 100 : null
         }
-        const acceptanceRate = totalGen ? ((totalAcc / totalGen) * 100).toFixed(1) : '—'
-        const totalInteractions = td.reportData.reduce((s, d) => s + (d.user_initiated_interaction_count || 0), 0)
         const color = CHART_COLORS[idx % CHART_COLORS.length]!
 
-        return { teamName, slug: td.slug, activeUsers, acceptanceRate, totalInteractions, color }
+        return {
+          teamName,
+          slug: td.slug,
+          memberCount: td.memberCount,
+          activeUsers,
+          activeUsersPct: fmtPct(adoptionPct(activeUsers, td.memberCount)),
+          acceptanceRate: fmtPct(acceptanceRate),
+          copilotAdoptionPct: fmtPct(summary.copilotAdoptionPct),
+          agentAdoptionPct: fmtPct(summary.agentAdoptionPct),
+          cliAdoptionPct: fmtPct(summary.cliAdoptionPct),
+          totalInteractions: summary.totalInteractions,
+          color
+        }
       })
     })
+
+    const comparisonTeams = computed(() =>
+      perTeamData.value.map((td, idx) => ({
+        slug: td.slug,
+        teamName: availableTeams.value.find(t => t.slug === td.slug)?.name || td.slug,
+        reportData: td.reportData,
+        memberCount: td.memberCount,
+        color: CHART_COLORS[idx % CHART_COLORS.length]!.border
+      }))
+    )
 
     // ── Comparison: chart data refs ────────────────────────────────────────────
     const acceptanceRateCountChartData = ref<ChartData<'line', number[], string>>({ labels: [], datasets: [] })
     const activeUsersChartData = ref<ChartData<'line', number[], string>>({ labels: [], datasets: [] })
-    const languageBarChartData = ref<ChartData<'bar', number[], string>>({ labels: [], datasets: [] })
     const editorBarChartData = ref<ChartData<'bar', number[], string>>({ labels: [], datasets: [] })
 
     const comparisonModelsData = computed<ChartData<'bar', number[], string>>(() => {
       if (!comparisonMode.value) return { labels: [], datasets: [] }
+      const sharesByTeam: Record<string, Record<string, number>> = {}
       const allModels = new Set<string>()
-      const teamModelData: Record<string, Record<string, number>> = {}
       perTeamData.value.forEach(td => {
-        teamModelData[td.slug] = {}
-        td.reportData.forEach(d => {
-          d.totals_by_model_feature?.forEach(mf => {
-            allModels.add(mf.model)
-            teamModelData[td.slug]![mf.model] = (teamModelData[td.slug]![mf.model] || 0) + (mf.user_initiated_interaction_count || 0)
-          })
-        })
+        const shares = modelSharePct(td.reportData)
+        sharesByTeam[td.slug] = shares
+        Object.keys(shares).forEach(model => allModels.add(model))
       })
       const models = Array.from(allModels).sort()
       if (!models.length) return { labels: [], datasets: [] }
@@ -1227,7 +1323,7 @@ export default defineComponent({
           const teamName = availableTeams.value.find(t => t.slug === td.slug)?.name || td.slug
           return {
             label: teamName,
-            data: models.map(m => teamModelData[td.slug]![m] || 0),
+            data: models.map(m => sharesByTeam[td.slug]![m] || 0),
             backgroundColor: CHART_COLORS[colorIndex]!.border,
             borderColor: CHART_COLORS[colorIndex]!.border,
             borderWidth: 1
@@ -1278,7 +1374,8 @@ export default defineComponent({
         slug: teamSlug,
         metrics: (response.metrics as Metrics[]) || [],
         usage: (response.usage as CopilotMetrics[]) || [],
-        reportData: response.reportData || []
+        reportData: response.reportData || [],
+        memberCount: response.teamMemberCount ?? 0
       }
     }
 
@@ -1287,7 +1384,6 @@ export default defineComponent({
         perTeamData.value = []
         acceptanceRateCountChartData.value = { labels: [], datasets: [] }
         activeUsersChartData.value = { labels: [], datasets: [] }
-        languageBarChartData.value = { labels: [], datasets: [] }
         editorBarChartData.value = { labels: [], datasets: [] }
         singleTeamUserMetrics.value = []
         userMetricsError.value = null
@@ -1330,43 +1426,33 @@ export default defineComponent({
       }
       activeUsersChartData.value = {
         labels: days,
-        datasets: loaded.map((td, i) => makeLineDataset(td, 'total_active_users', 'Active Users', i))
+        datasets: loaded.map((td, idx) => {
+          const color = CHART_COLORS[idx % CHART_COLORS.length]!
+          const knownSize = td.memberCount > 0
+          return {
+            label: `${getTeamName(td.slug)} — ${knownSize ? 'Active Users (% of members)' : 'Active Users (count)'}`,
+            data: days.map(day => {
+              const count = td.reportData.find(d => d.day === day)?.daily_active_users
+                ?? td.metrics.find(m => m.day === day)?.total_active_users
+                ?? 0
+              return knownSize ? adoptionPct(count, td.memberCount)! : count
+            }),
+            backgroundColor: color.bg,
+            borderColor: color.border,
+            borderDash: knownSize ? undefined : [5, 4],
+            yAxisID: knownSize ? 'y' : 'yCount',
+            tension: 0.1
+          }
+        })
       }
 
-      // Language & editor grouped bar charts (comparison mode)
-      const langComp: Array<{ team: string; language: string; acceptance_rate: number }> = []
-      const editorComp: Array<{ team: string; editor: string; active_users: number }> = []
-
-      loaded.forEach(td => {
-        const langAgg = aggregateLangStats(td)
-        Object.entries(langAgg).forEach(([language, vals]) => {
-          const rate = vals.suggestions ? (vals.acceptances / vals.suggestions) * 100 : 0
-          langComp.push({ team: td.slug, language, acceptance_rate: rate })
-        })
-        const editorAgg = aggregateEditorStats(td)
-        Object.entries(editorAgg).forEach(([editor, vals]) => {
-          editorComp.push({ team: td.slug, editor, active_users: vals.interactions })
-        })
-      })
-
-      const allLanguages = [...new Set(langComp.map(l => l.language))]
-      languageBarChartData.value = {
-        labels: allLanguages,
-        datasets: loaded.map((td, idx) => ({
-          label: getTeamName(td.slug),
-          data: allLanguages.map(lang => langComp.find(l => l.language === lang && l.team === td.slug)?.acceptance_rate || 0),
-          backgroundColor: CHART_COLORS[idx % CHART_COLORS.length]!.border,
-          borderColor: CHART_COLORS[idx % CHART_COLORS.length]!.border,
-          borderWidth: 1
-        }))
-      }
-
-      const allEditors = [...new Set(editorComp.map(e => e.editor))]
+      const editorSharesByTeam = loaded.map(td => editorSharePct(td.reportData))
+      const allEditors = [...new Set(editorSharesByTeam.flatMap(shares => Object.keys(shares)))].sort()
       editorBarChartData.value = {
         labels: allEditors,
         datasets: loaded.map((td, idx) => ({
           label: getTeamName(td.slug),
-          data: allEditors.map(editor => editorComp.find(e => e.editor === editor && e.team === td.slug)?.active_users || 0),
+          data: allEditors.map(editor => editorSharesByTeam[idx]![editor] || 0),
           backgroundColor: CHART_COLORS[idx % CHART_COLORS.length]!.border,
           borderColor: CHART_COLORS[idx % CHART_COLORS.length]!.border,
           borderWidth: 1
@@ -1463,16 +1549,18 @@ export default defineComponent({
       getReportsToUrl,
       // comparison
       comparisonSummaryCards,
+      comparisonTeams,
       comparisonModelsData,
       acceptanceRateCountChartData,
       activeUsersChartData,
-      languageBarChartData,
       editorBarChartData,
       // chart options
       compactLineOptions,
       donutOptions,
       horizontalBarOptions,
       groupedBarOptions,
+      percentBarOptions,
+      activeUsersOptions,
       // helpers
       scopeType,
       clearSelection,

@@ -79,6 +79,14 @@ Select **one team** for a full deep-dive view with KPI tiles, time-series charts
   <img width="800" alt="Teams Comparison" src="./images/teams-comparison.png">
 </p>
 
+#### Team Adoption Comparisons
+
+The comparison view normalizes editor and model interactions to each team's share of its own activity, and ranks teams by Copilot adoption by default. The leaderboard also compares agent adoption, CLI adoption, daily active users and acceptance rate; its trend compares the later half of the selected range with the earlier half.
+
+The adoption heatmap shows weekly Copilot, agent, CLI or approximate VS Code agent adoption. Scorecards include Copilot, agent and CLI adoption plus VS Code agent users. Adoption percentages use the **current team-member count**, not licensed seats, and are capped at 100% for display. Unknown team sizes show an em dash rather than a percentage.
+
+Adoption uses rolling distinct-user counts from the last report day: 7-day counts for ranges of up to a week and 28-day counts for longer ranges. Trends compare halves of the selected range rather than fetching a preceding period. VS Code agent users are an approximation because the API has no editor-by-feature cross-tabulation. Membership changes can misattribute historical activity, and users in overlapping teams appear in each team; do not sum team totals into organization totals.
+
 #### Team-Scoped Direct URLs
 
 You can link directly to a fully team-scoped dashboard — every tab (IDE metrics, chat, agents, languages, etc.) will automatically filter to that team's members only. A blue banner at the top of the page confirms the active scope and provides a quick link back to the organization view.
