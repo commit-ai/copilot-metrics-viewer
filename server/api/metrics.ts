@@ -60,3 +60,4 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode, statusMessage: 'Error fetching metrics data: ' + errorMessage });
     }
 })
+

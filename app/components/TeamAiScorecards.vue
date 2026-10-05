@@ -7,6 +7,7 @@
           <span class="text-subtitle-2 font-weight-bold text-truncate">{{ card.teamName }}</span>
         </div>
         <div class="text-caption text-medium-emphasis mb-2">{{ card.memberCount }} members</div>
+
         <div v-for="stat in card.stats" :key="stat.label" class="d-flex justify-space-between align-center py-1">
           <v-tooltip location="top" open-delay="200">
             <template #activator="{ props: tip }">
@@ -42,12 +43,18 @@ export default defineComponent({
     teams: { type: Array as PropType<ScorecardTeam[]>, required: true },
   },
   setup(props) {
+    // Percentages and per-person figures are null when the team size is
+    // unknown — show an em dash rather than a misleading 0%.
     const pct = (value: number | null) => (value === null ? '—' : `${value.toFixed(1)}%`);
+
     const cards = computed(() =>
       props.teams.map(team => {
         const summary = summarizeTeam(team.reportData, team.memberCount);
         return {
-          ...team,
+          slug: team.slug,
+          teamName: team.teamName,
+          color: team.color,
+          memberCount: team.memberCount,
           stats: [
             {
               label: 'Agent share of Copilot-added LOC',

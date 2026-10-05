@@ -61,12 +61,14 @@ export interface HeatmapTeam {
 }
 
 type MetricKey = 'copilot' | 'agent' | 'cli' | 'vscodeAgent';
+
 const METRIC_OPTIONS: { key: MetricKey; label: string }[] = [
   { key: 'copilot', label: 'Copilot adoption' },
   { key: 'agent', label: 'Agent adoption' },
   { key: 'cli', label: 'CLI adoption' },
   { key: 'vscodeAgent', label: 'VS Code agents' },
 ];
+
 const SUMMARY_METRIC = {
   copilot: 'copilotAdoptionPct',
   agent: 'agentAdoptionPct',
@@ -81,6 +83,7 @@ export default defineComponent({
   },
   setup(props) {
     const selectedMetric = ref<MetricKey>('copilot');
+
     const rows = computed(() =>
       props.teams.map(team => ({
         slug: team.slug,
@@ -88,11 +91,15 @@ export default defineComponent({
         cells: weeklyAdoption(team.reportData, selectedMetric.value, team.memberCount),
       }))
     );
+
+    // Teams can cover different weeks; the column set is their union so no
+    // team's data silently disappears from the grid.
     const weeks = computed(() => {
       const all = new Set<string>();
       rows.value.forEach(row => row.cells.forEach(cell => all.add(cell.weekStart)));
       return [...all].sort();
     });
+
     const alignedRows = computed(() =>
       rows.value.map(row => ({
         ...row,
@@ -101,6 +108,7 @@ export default defineComponent({
         ),
       }))
     );
+
     const summary = computed(() => {
       const scored = props.teams
         .map(team => ({
@@ -108,6 +116,7 @@ export default defineComponent({
           value: summarizeTeam(team.reportData, team.memberCount)[SUMMARY_METRIC[selectedMetric.value]],
         }))
         .filter((entry): entry is { teamName: string; value: number } => entry.value !== null);
+
       if (scored.length < 2) return '';
       scored.sort((a, b) => b.value - a.value);
       const top = scored[0]!;
@@ -115,11 +124,14 @@ export default defineComponent({
       const label = METRIC_OPTIONS.find(option => option.key === selectedMetric.value)!.label.toLowerCase();
       return `Highest ${label}: ${top.teamName} (${top.value.toFixed(1)}%). Lowest: ${bottom.teamName} (${bottom.value.toFixed(1)}%).`;
     });
+
+    /** Null (unknown denominator) renders as a neutral grey, not as zero. */
     function cellColor(adoptionPct: number | null) {
       if (adoptionPct === null) return 'rgba(128,128,128,0.15)';
       const intensity = Math.min(adoptionPct, 100) / 100;
       return `rgba(46, 125, 50, ${0.12 + intensity * 0.78})`;
     }
+
     const shortDate = (day: string) => day.slice(5);
 
     return {

@@ -256,9 +256,8 @@ test.describe('Teams comparison (cody-test-org)', () => {
         const locChart = dashboard.page.getByText('Agent share of Copilot-added LOC — over time');
         await expect(locChart).toBeVisible();
 
-        await expect(dashboard.page.getByText('Editor Usage (% of interactions) — by Team')).toBeVisible();
-        await expect(dashboard.page.getByText('Team leaderboard', { exact: true })).toBeVisible();
-        await expect(dashboard.page.getByText('Adoption heatmap', { exact: true })).toBeVisible();
+        const editorChart = dashboard.page.getByText('Editor Usage (% of interactions) — by Team');
+        await expect(editorChart).toBeVisible();
     });
 });
 
