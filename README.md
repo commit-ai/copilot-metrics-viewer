@@ -59,7 +59,15 @@ Users can now filter metrics for custom date ranges up to 100 days, with an intu
 Select **one team** for a full deep-dive view with KPI tiles, time-series charts (acceptance rate, active users, feature usage, model usage), language and editor breakdowns, and a per-user activity table. Select **two or more teams** to compare them side by side.
 
 > [!NOTE]
-> GitHub's Copilot Usage Metrics API does not provide team-level endpoints. Team metrics are **derived** by fetching per-user daily metrics from the organization/enterprise endpoint, resolving team membership via the GitHub Teams API, and aggregating per-user data in-memory. This works in both Direct API mode (28-day window) and Historical mode (full history).
+> GitHub does not provide a pre-aggregated team usage report. This application's team metrics are a **current-membership view**: per-user daily activity is filtered to members returned by the GitHub Teams API at request time. This works in Direct API mode and Historical mode, but it is not a membership-at-the-time historical report.
+>
+> [GitHub's historical team recipe](https://docs.github.com/en/copilot/reference/copilot-usage-metrics/team-level-metrics) joins each day's user-teams and per-user activity reports on `(user_id, day, organization_id/enterprise_id)` before rolling up. We do not currently fetch or persist those daily membership reports, so membership changes can misattribute earlier activity in this dashboard. The official user-teams reports omit teams with fewer than 5 seated Copilot users; our current-membership view can include those smaller teams and must not be mistaken for that official join.
+>
+> Users on multiple teams contribute to each team. Team totals must not be summed to derive organization totals. Distinct-user windows are computed from per-user records, not by adding daily active-user counts.
+>
+> Adoption percentages use the current team-member count as their denominator. Agent and CLI adoption numerators use rolling distinct users from per-user daily records: 7 days for a weekly window and 28 days for a monthly window. VS Code agent users are an approximation: a user counts when they have a VS Code IDE entry and agent usage on the same day, because GitHub does not provide an IDE-by-feature cross-tabulation.
+>
+> Mock team requests use the same member-filtered per-user aggregation as live team requests, using the bundled per-day user fixture.
 
 **Single team deep dive:**
 <p align="center">

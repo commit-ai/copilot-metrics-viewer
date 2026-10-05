@@ -129,6 +129,13 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
     logger.info('Using mocked data mode (new API format via HTTP download)');
     const identifier = options.githubOrg || options.githubEnt || 'mock-org';
     const scope = (options.scope || 'organization') as MetricsReportRequest['scope'];
+    if (options.githubTeam) {
+      options.isDataMocked = true;
+      const members = await fetchAllTeamMembers(options, new Headers());
+      if (!members.length) return { metrics: [], reportData: [] };
+      const records = await fetchRawUserDayRecords({ scope, identifier, isMocked: true }, new Headers());
+      return buildFilteredResult(aggregateTeamMetrics(records, new Set(members.map(member => member.login))), options);
+    }
     const report = await fetchLatestReport({ scope, identifier, isMocked: true }, new Headers());
     const metrics = transformReportToMetrics(report);
     return sortMetricsDataResult({ metrics, reportData: report.day_totals });

@@ -29,7 +29,25 @@ export default defineEventHandler(async (event) => {
         // metrics is the old API format
         const metricsData = sortMetricsByDay(convertToMetrics(usageData));
 
-        const result = { metrics: metricsData, usage: usageData, reportData } as MetricsApiResponse;
+        // Team member count is the denominator for the Teams tab's per-person
+        // and adoption-percentage metrics. Resolved here rather than inside
+        // getMetricsDataV2 because that function's mock branch returns before
+        // team membership is ever resolved. Non-fatal: a failure here must not
+        // cost the caller its metrics.
+        let teamMemberCount: number | undefined;
+        if (options.githubTeam) {
+            try {
+                // Imported lazily so org-level requests never load the seats
+                // module (and its database dependencies).
+                const { fetchAllTeamMembers } = await import('./seats');
+                const members = await fetchAllTeamMembers(options, event.context.headers);
+                teamMemberCount = members.length;
+            } catch (err) {
+                logger.error('Failed to resolve team member count (non-fatal):', err);
+            }
+        }
+
+        const result = { metrics: metricsData, usage: usageData, reportData, teamMemberCount } as MetricsApiResponse;
         return result;
     } catch (error: unknown) {
         logger.error('Error fetching metrics data:', error);
@@ -40,4 +58,3 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode, statusMessage: 'Error fetching metrics data: ' + errorMessage });
     }
 })
-
