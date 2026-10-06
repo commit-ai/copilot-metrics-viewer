@@ -32,6 +32,7 @@ import { isDbConfigured } from '../../server/storage/db-config';
 export interface MetricsDataResult {
   metrics: CopilotMetrics[];
   reportData: ReportDayTotals[];
+  teamMemberCount?: number;
 }
 
 function sortMetricsDataResult(result: MetricsDataResult): MetricsDataResult {
@@ -129,6 +130,23 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
     logger.info('Using mocked data mode (new API format via HTTP download)');
     const identifier = options.githubOrg || options.githubEnt || 'mock-org';
     const scope = (options.scope || 'organization') as MetricsReportRequest['scope'];
+    if (options.githubTeam) {
+      options.isDataMocked = true;
+      const members = await fetchAllTeamMembers(options, new Headers());
+      if (!members.length) return { metrics: [], reportData: [], teamMemberCount: 0 };
+      const records = await fetchRawUserDayRecords({ scope, identifier, isMocked: true }, new Headers());
+      return buildFilteredResult(
+        aggregateTeamMetrics(
+          records,
+          new Set(members.map(member => member.login)),
+          options.since && options.until
+            ? { since: shiftDate(options.since, -27), until: options.until }
+            : undefined,
+        ),
+        options,
+        members.length,
+      );
+    }
     const report = await fetchLatestReport({ scope, identifier, isMocked: true }, new Headers());
     const metrics = transformReportToMetrics(report);
     return sortMetricsDataResult({ metrics, reportData: report.day_totals });
@@ -143,6 +161,10 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
     // Default to last 28 days if no date range specified
     const endDate = options.until || new Date().toISOString().split('T')[0]!;
     const startDate = options.since || new Date(Date.now() - 27 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+    const aggregationStartDate = options.githubTeam ? shiftDate(startDate, -27) : startDate;
+    const displayOptions = options.clone();
+    displayOptions.since ||= startDate;
+    displayOptions.until ||= endDate;
     logger.info(`Historical mode: checking DB for ${identifier} (${startDate} to ${endDate})`);
 
     const isTeamScope = !!options.githubTeam;
@@ -156,16 +178,23 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
         //   4. Fall back to live API only when DB has no data yet
         const teamMembers = await fetchAllTeamMembers(options, event.context.headers);
         if (teamMembers.length === 0) {
-          return { metrics: [], reportData: [] };
+          return { metrics: [], reportData: [], teamMemberCount: 0 };
         }
         const teamLogins = new Set(teamMembers.map(m => m.login));
 
         const request: MetricsReportRequest = { scope: options.scope!, identifier, isMocked: options.isDataMocked };
-        const userDayRecords = await getUserDayMetricsByDateRange(options.scope!, identifier, startDate, endDate);
+        const userDayRecords = await getUserDayMetricsByDateRange(options.scope!, identifier, aggregationStartDate, endDate);
         if (userDayRecords.length > 0) {
           logger.info(`Aggregating team metrics from ${userDayRecords.length} per-day user DB records`);
-          const report = aggregateTeamMetrics(userDayRecords, teamLogins);
-          return buildFilteredResult(report, options);
+          const report = aggregateTeamMetrics(userDayRecords, teamLogins, {
+            since: aggregationStartDate,
+            until: endDate,
+          });
+          return buildFilteredResult(
+            report,
+            displayOptions,
+            teamMembers.length,
+          );
         }
 
         // No per-day data in DB — fetch from API, persist all user records, then aggregate
@@ -180,8 +209,15 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
         } catch (err) {
           logger.error('Failed to store per-day user records:', err);
         }
-        const report = aggregateTeamMetrics(liveUserDayRecords, teamLogins);
-        return buildFilteredResult(report, options);
+        const report = aggregateTeamMetrics(liveUserDayRecords, teamLogins, {
+          since: aggregationStartDate,
+          until: endDate,
+        });
+        return buildFilteredResult(
+          report,
+          displayOptions,
+          teamMembers.length,
+        );
 
       } else {
         // Org/Enterprise path: serve pre-aggregated metrics from DB
@@ -245,15 +281,18 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
     const teamMembers = await fetchAllTeamMembers(options, event.context.headers);
     if (teamMembers.length === 0) {
       logger.info('No team members found — returning empty metrics');
-      return { metrics: [], reportData: [] };
+      return { metrics: [], reportData: [], teamMemberCount: 0 };
     }
     const teamLogins = new Set(teamMembers.map(m => m.login));
 
     const request: MetricsReportRequest = { scope: options.scope!, identifier, isMocked: options.isDataMocked };
     const userDayRecords = await fetchRawUserDayRecords(request, event.context.headers);
     logger.info(`Aggregating team metrics from ${userDayRecords.length} user-day records (${teamMembers.length} team members)`);
-    const report = aggregateTeamMetrics(userDayRecords, teamLogins);
-    return buildFilteredResult(report, options);
+    const report = aggregateTeamMetrics(userDayRecords, teamLogins, {
+      since: options.since ? shiftDate(options.since, -27) : shiftDate(options.until || new Date().toISOString().slice(0, 10), -27),
+      until: options.until || new Date().toISOString().slice(0, 10),
+    });
+    return buildFilteredResult(report, options, teamMembers.length);
   }
 
   logger.info('Using new Copilot Metrics API (direct, no DB)');
@@ -268,7 +307,7 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
  * Build a MetricsDataResult from an OrgReport, applying date-range filtering
  * and holiday exclusion from the options.
  */
-function buildFilteredResult(report: OrgReport, options: Options): MetricsDataResult {
+function buildFilteredResult(report: OrgReport, options: Options, teamMemberCount?: number): MetricsDataResult {
   let metrics = transformReportToMetrics(report);
   let reportData = report.day_totals;
   if (options.since || options.until) {
@@ -284,7 +323,17 @@ function buildFilteredResult(report: OrgReport, options: Options): MetricsDataRe
     });
   }
   const filteredMetrics = filterHolidaysFromMetrics(metrics, options.excludeHolidays || false, options.locale);
-  return { metrics: filteredMetrics, reportData };
+  return {
+    metrics: filteredMetrics,
+    reportData,
+    ...(teamMemberCount === undefined ? {} : { teamMemberCount }),
+  };
+}
+
+function shiftDate(day: string, offset: number): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().split('T')[0]!;
 }
 
 /**

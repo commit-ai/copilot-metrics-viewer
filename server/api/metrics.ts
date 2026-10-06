@@ -24,12 +24,27 @@ export default defineEventHandler(async (event) => {
         );
 
         // Always use v2 handler which tries new API first, falls back to legacy
-        const { metrics: usageData, reportData } = await getMetricsDataV2(event);
+        const { metrics: usageData, reportData, teamMemberCount: resolvedTeamMemberCount } = await getMetricsDataV2(event);
 
         // metrics is the old API format
         const metricsData = sortMetricsByDay(convertToMetrics(usageData));
 
-        const result = { metrics: metricsData, usage: usageData, reportData } as MetricsApiResponse;
+        // Team metrics resolve membership while filtering the report and return
+        // the count with it. Fall back only for legacy paths that cannot provide it.
+        let teamMemberCount = resolvedTeamMemberCount;
+        if (options.githubTeam && teamMemberCount === undefined) {
+            try {
+                // Imported lazily so org-level requests never load the seats
+                // module (and its database dependencies).
+                const { fetchAllTeamMembers } = await import('./seats');
+                const members = await fetchAllTeamMembers(options, event.context.headers);
+                teamMemberCount = members.length;
+            } catch (err) {
+                logger.error('Failed to resolve team member count (non-fatal):', err);
+            }
+        }
+
+        const result = { metrics: metricsData, usage: usageData, reportData, teamMemberCount } as MetricsApiResponse;
         return result;
     } catch (error: unknown) {
         logger.error('Error fetching metrics data:', error);
@@ -40,4 +55,3 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode, statusMessage: 'Error fetching metrics data: ' + errorMessage });
     }
 })
-
