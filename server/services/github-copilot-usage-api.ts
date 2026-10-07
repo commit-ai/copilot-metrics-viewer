@@ -1106,14 +1106,32 @@ export async function downloadUserDayRecords(downloadUrl: string): Promise<UserD
  */
 export async function fetchRawUserDayRecords(
   request: MetricsReportRequest,
-  headers: HeadersInit
+  headers: HeadersInit,
+  mockEndDay = toDateString(new Date())
 ): Promise<UserDayRecord[]> {
-  const { download_links } = await requestUserDownloadLinks(request, headers, '28-day');
+  const mocked = isMockMode() || request.isMocked;
+  // The enterprise fixture contains only user_totals; share the per-day organization fixture.
+  const { download_links } = await requestUserDownloadLinks(
+    mocked ? { ...request, scope: 'organization', isMocked: true } : request,
+    headers,
+    '28-day'
+  );
 
   if (!download_links || download_links.length === 0) {
     return [];
   }
 
   const batches = await Promise.all(download_links.map(url => downloadUserDayRecords(url)));
-  return batches.flat();
+  const records = batches.flat();
+  if (!mocked || !records.length) return records;
+
+  const latestDay = records.reduce((latest, record) => record.day > latest ? record.day : latest, records[0]!.day);
+  const offset = new Date(mockEndDay).getTime() - new Date(latestDay).getTime();
+  const shift = (day: string) => toDateString(new Date(new Date(day).getTime() + offset));
+  return records.map(record => ({
+    ...record,
+    day: shift(record.day),
+    report_start_day: shift(record.report_start_day),
+    report_end_day: shift(record.report_end_day),
+  }));
 }

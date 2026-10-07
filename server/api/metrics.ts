@@ -3,6 +3,7 @@ import type { MetricsApiResponse } from "@/types/metricsApiResponse";
 import { getMetricsDataV2 } from '../../shared/utils/metrics-util-v2';
 import { Options } from '@/model/Options';
 import { requireTeamMembershipOrAdmin } from '../utils/team-membership';
+import { isMockMode } from '../services/github-copilot-usage-api-mock';
 
 function sortMetricsByDay<T extends { day: string }>(metrics: T[]): T[] {
     return [...metrics].sort((left, right) => left.day.localeCompare(right.day));
@@ -36,6 +37,7 @@ export default defineEventHandler(async (event) => {
         // cost the caller its metrics.
         let teamMemberCount: number | undefined;
         if (options.githubTeam) {
+            options.isDataMocked = isMockMode() || options.isDataMocked;
             try {
                 // Imported lazily so org-level requests never load the seats
                 // module (and its database dependencies).

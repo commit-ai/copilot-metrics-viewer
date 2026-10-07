@@ -133,7 +133,7 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
       options.isDataMocked = true;
       const members = await fetchAllTeamMembers(options, new Headers());
       if (!members.length) return { metrics: [], reportData: [] };
-      const records = await fetchRawUserDayRecords({ scope, identifier, isMocked: true }, new Headers());
+      const records = await fetchRawUserDayRecords({ scope, identifier, isMocked: true }, new Headers(), options.until);
       return buildFilteredResult(aggregateTeamMetrics(records, new Set(members.map(member => member.login))), options);
     }
     const report = await fetchLatestReport({ scope, identifier, isMocked: true }, new Headers());
@@ -168,7 +168,8 @@ export async function getMetricsDataV2(event: H3Event<EventHandlerRequest>): Pro
         const teamLogins = new Set(teamMembers.map(m => m.login));
 
         const request: MetricsReportRequest = { scope: options.scope!, identifier, isMocked: options.isDataMocked };
-        const userDayRecords = await getUserDayMetricsByDateRange(options.scope!, identifier, startDate, endDate);
+        const lookbackStart = new Date(new Date(startDate).getTime() - 27 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
+        const userDayRecords = await getUserDayMetricsByDateRange(options.scope!, identifier, lookbackStart, endDate);
         if (userDayRecords.length > 0) {
           logger.info(`Aggregating team metrics from ${userDayRecords.length} per-day user DB records`);
           const report = aggregateTeamMetrics(userDayRecords, teamLogins);

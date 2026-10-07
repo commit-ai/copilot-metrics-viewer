@@ -67,7 +67,7 @@ Select **one team** for a full deep-dive view with KPI tiles, time-series charts
 >
 > Adoption percentages use the current team-member count as their denominator. Agent and CLI adoption numerators use rolling distinct users from per-user daily records: 7 days for a weekly window and 28 days for a monthly window. VS Code agent users are an approximation: a user counts when they have a VS Code IDE entry and agent usage on the same day, because GitHub does not provide an IDE-by-feature cross-tabulation.
 >
-> Mock team requests use the same member-filtered per-user aggregation as live team requests, using the bundled per-day user fixture.
+> Mock team requests use the same member-filtered per-user aggregation as live team requests. Organization and enterprise teams share the bundled per-day organization user fixture, with all fixture dates shifted together to end on the selected end date (or today). Real report dates are unchanged. Historical team queries read the preceding 27 days before filtering output to the selected range, so rolling adoption counts include earlier activity.
 
 **Single team deep dive:**
 <p align="center">
