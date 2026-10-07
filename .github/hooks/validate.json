@@ -1,0 +1,22 @@
+{
+  "before_commit": [
+    {
+      "name": "Build Check",
+      "command": "npm run build",
+      "enforce": true,
+      "description": "Ensure TypeScript and Nuxt build succeeds"
+    },
+    {
+      "name": "Test Suite",
+      "command": "npm test",
+      "enforce": true,
+      "description": "All 97 tests must pass"
+    },
+    {
+      "name": "Lint Report",
+      "command": "npm run lint",
+      "enforce": false,
+      "description": "Report lint errors only; the repo has known baseline lint failures, so review touched-file regressions without blocking every change"
+    }
+  ]
+}
