@@ -253,10 +253,10 @@ test.describe('Teams comparison (cody-test-org)', () => {
     });
 
     test('comparison charts are visible', tag, async () => {
-        const locChart = dashboard.page.getByText('Agent share of Copilot-added LOC — over time');
-        await expect(locChart).toBeVisible();
+        const languageChart = dashboard.page.getByText('Language Usage — by Team');
+        await expect(languageChart).toBeVisible();
 
-        const editorChart = dashboard.page.getByText('Editor Usage (% of interactions) — by Team');
+        const editorChart = dashboard.page.getByText('Editor Usage — by Team');
         await expect(editorChart).toBeVisible();
     });
 });
