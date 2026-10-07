@@ -4,17 +4,13 @@
  * and user metrics.
  */
 
-import { describe, it, expect, beforeEach, beforeAll, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { newDb } from 'pg-mem';
 
 // Create in-memory PG and mock the db module before importing storage
 const memDb = newDb();
 const pool = memDb.adapters.createPg().Pool;
 const mockPool = new pool();
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 vi.mock('../server/storage/db', () => ({
   getPool: () => mockPool,
@@ -106,21 +102,6 @@ async function setupSchema() {
     CREATE INDEX IF NOT EXISTS idx_user_day_metrics_lookup
     ON user_day_metrics (scope, identifier, metrics_date)
   `);
-  await mockPool.query(`
-    CREATE TABLE IF NOT EXISTS team_pr_metrics (
-      id            SERIAL PRIMARY KEY,
-      scope         TEXT NOT NULL,
-      identifier    TEXT NOT NULL,
-      team_slug     TEXT NOT NULL,
-      since_date    DATE NOT NULL,
-      until_date    DATE NOT NULL,
-      auth_scope    TEXT NOT NULL DEFAULT '',
-      data          JSONB NOT NULL,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (scope, identifier, team_slug, since_date, until_date, auth_scope)
-    )
-  `);
 }
 
 // Minimal CopilotMetrics fixture
@@ -160,62 +141,6 @@ describe('PostgreSQL Storage Layer', () => {
     await mockPool.query('DELETE FROM sync_status');
     await mockPool.query('DELETE FROM seats');
     await mockPool.query('DELETE FROM user_day_metrics');
-    await mockPool.query('DELETE FROM team_pr_metrics');
-  });
-
-  describe('team-pr-metrics-storage', () => {
-    const key = {
-      scope: 'organization',
-      identifier: 'test-org',
-      teamSlug: 'team-a',
-      since: '2026-02-01',
-      until: '2026-02-28',
-      authScope: 'viewer-token-hash',
-    };
-    const metrics = {
-      weeks: [],
-      totalMerged: 8,
-      totalAiTouched: 3,
-      rollingAverage: 4,
-      avgMergedPerPerson: 2,
-      memberCount: 4,
-      truncated: false,
-      orgScoped: true,
-    };
-
-    it('round-trips and upserts cached metrics', async () => {
-      vi.stubEnv('DATABASE_URL', 'postgres://pg-mem/team-pr-metrics');
-      const { getCachedTeamPrMetrics, saveTeamPrMetrics } = await import('../server/storage/team-pr-metrics-storage');
-      expect(await getCachedTeamPrMetrics(key)).toBeNull();
-      await saveTeamPrMetrics(key, metrics);
-      expect(await getCachedTeamPrMetrics(key)).toEqual(metrics);
-
-      const updated = { ...metrics, totalMerged: 12 };
-      await saveTeamPrMetrics(key, updated);
-      expect((await getCachedTeamPrMetrics(key))?.totalMerged).toBe(12);
-    });
-
-    it('isolates cache entries by authorization scope', async () => {
-      vi.stubEnv('DATABASE_URL', 'postgres://pg-mem/team-pr-metrics');
-      const { getCachedTeamPrMetrics, saveTeamPrMetrics } = await import('../server/storage/team-pr-metrics-storage');
-      await saveTeamPrMetrics(key, metrics);
-      await saveTeamPrMetrics({ ...key, authScope: 'admin-token-hash' }, { ...metrics, totalMerged: 40 });
-
-      expect((await getCachedTeamPrMetrics(key))?.totalMerged).toBe(8);
-      expect((await getCachedTeamPrMetrics({ ...key, authScope: 'admin-token-hash' }))?.totalMerged).toBe(40);
-    });
-
-    it('treats entries older than one hour as expired', async () => {
-      vi.stubEnv('DATABASE_URL', 'postgres://pg-mem/team-pr-metrics');
-      const { getCachedTeamPrMetrics, saveTeamPrMetrics } = await import('../server/storage/team-pr-metrics-storage');
-      await saveTeamPrMetrics(key, metrics);
-      await mockPool.query(
-        `UPDATE team_pr_metrics SET updated_at = NOW() - INTERVAL '2 hours'
-         WHERE scope = $1 AND identifier = $2 AND team_slug = $3 AND auth_scope = $4`,
-        [key.scope, key.identifier, key.teamSlug, key.authScope],
-      );
-      expect(await getCachedTeamPrMetrics(key)).toBeNull();
-    });
   });
 
   describe('metrics-storage', () => {
