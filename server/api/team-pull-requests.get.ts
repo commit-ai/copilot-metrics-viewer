@@ -5,14 +5,14 @@
  * search API, so it is only ever called when the user explicitly asks for PR
  * data in the Teams tab. Results are cached per (team, date range).
  *
- * Responds 429 with `retryAfterMinutes` when GitHub rate limits the caller,
- * so the UI can say "come back in X minutes" instead of failing.
+ * Responds 429 when GitHub rate limits the caller and 403 when the credential
+ * cannot read the organization's pull requests.
  */
 
 import { Options, type Scope } from '@/model/Options';
 import { requireTeamMembershipOrAdmin } from '../utils/team-membership';
 import { fetchAllTeamMembers } from './seats';
-import { fetchTeamPrMetrics, SearchRateLimitError, buildWeekBuckets, rollingAverage, type TeamPrMetrics } from '../services/team-pr-search';
+import { fetchTeamPrMetrics, SearchAccessError, SearchRateLimitError, buildWeekBuckets, rollingAverage, type TeamPrMetrics } from '../services/team-pr-search';
 import { getCachedTeamPrMetrics, saveTeamPrMetrics } from '../storage/team-pr-metrics-storage';
 
 /** Default reporting window, matching the rest of the dashboard. */
@@ -112,6 +112,10 @@ export default defineEventHandler(async (event): Promise<TeamPrMetrics> => {
         statusMessage: error.message,
         data: { retryAfterMinutes: error.retryAfterMinutes },
       });
+    }
+    if (error instanceof SearchAccessError) {
+      logger.warn(error.message);
+      throw createError({ statusCode: 403, statusMessage: error.message });
     }
     logger.error('Team PR search failed:', error);
     throw createError({

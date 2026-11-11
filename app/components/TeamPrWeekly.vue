@@ -103,14 +103,19 @@ export default defineComponent({
         if (version === requestVersion) metrics.value = result;
       } catch (err: unknown) {
         if (version !== requestVersion) return;
-        const failure = err as { statusCode?: number; data?: { data?: { retryAfterMinutes?: number }; retryAfterMinutes?: number; message?: string } };
+        const failure = err as {
+          statusCode?: number;
+          statusMessage?: string;
+          data?: { data?: { retryAfterMinutes?: number }; retryAfterMinutes?: number; message?: string; statusMessage?: string };
+        };
         metrics.value = null;
         if (failure.statusCode === 429) {
           rateLimited.value = true;
           const minutes = failure.data?.data?.retryAfterMinutes ?? failure.data?.retryAfterMinutes ?? 1;
           error.value = `GitHub's search rate limit was reached. Come back in about ${minutes} minute${minutes === 1 ? '' : 's'} and try again.`;
         } else {
-          error.value = failure.data?.message || 'Could not load pull request data for this team.';
+          error.value = failure.data?.message || failure.data?.statusMessage || failure.statusMessage
+            || 'Could not load pull request data for this team.';
         }
       } finally {
         if (version === requestVersion) loading.value = false;

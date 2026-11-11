@@ -89,6 +89,12 @@ Both the deep-dive and comparison views include team-level AI contribution and a
 
 **Weekly merged pull requests** — on-demand panels in both single-team and comparison views show weekly merged PR counts, AI-touched PRs, a rolling weekly average and merged PRs per person. Each comparison panel is labelled by team. Changing teams or the date range clears loaded PR data so stale results are never shown for a new selection.
 
+GitHub search only counts pull requests in repositories the server's GitHub
+credential can read, so this report needs read access to the organization's
+repositories: the `repo` scope for a classic PAT or OAuth token, or
+**Pull requests: Read-only** on all repositories for a fine-grained PAT or
+GitHub App. Without it, the card shows an access error instead of empty weeks.
+
 **PRs Merged comparison cards** — one KPI tile per selected team displays its merged count for the selected range, populated by the same on-demand request as the weekly panel. Choose **PRs Merged** or **PRs Merged per person** in the team leaderboard to rank loaded teams. Unloaded teams show "Not loaded" and are not ranked; incomplete member searches show a lower-bound marker (`≥`). PR trends compare average counts in the later versus earlier half of complete weeks, excluding partial weeks; fewer than two complete weeks or truncated results have no trend.
 
 Adoption and usage comparisons use percentages or per-person figures. PR counts are also available as absolute totals for executive reporting; use the per-person leaderboard option when comparing differently sized teams.
@@ -391,6 +397,8 @@ NUXT_PUBLIC_IS_DATA_MOCKED=false
 #### NUXT_GITHUB_TOKEN
 
 Specifies the GitHub Personal Access Token utilized for **metrics** API requests. Generate this token with the following permissions: _Read access to members_, _organization copilot metrics_, and _organization copilot seat management_.
+
+The Teams tab's weekly merged-PR report also needs read access to the organization's repositories (classic PAT: `repo`; fine-grained PAT: _Pull requests: Read-only_ on all repositories). Without it, that report shows an access error; the rest of the dashboard is unaffected.
 
 This token does **not** need billing scopes — billing has its own dedicated token (see `NUXT_GITHUB_BILLING_TOKEN` below). Keeping the two separate means metrics can keep using a fine-grained PAT or GitHub App, while only billing requires a classic PAT.
 

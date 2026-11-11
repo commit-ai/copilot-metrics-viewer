@@ -12,15 +12,18 @@ import {
   chunkLogins,
   rollingAverage,
   buildBucketQueries,
-  buildGraphQLQuery,
+  buildGraphQLQueries,
   baseQueryLength,
   aliasFor,
   collectCounts,
   retryAfterMinutes,
   fetchTeamPrMetrics,
   SearchRateLimitError,
+  SearchAccessError,
   COPILOT_AGENT_AUTHOR,
   COPILOT_REVIEWER,
+  MAX_SEARCHES_PER_REQUEST,
+  ORG_PR_PROBE_ALIAS,
   type WeekPrCounts,
 } from '../server/services/team-pr-search';
 
@@ -160,22 +163,51 @@ describe('buildBucketQueries', () => {
   });
 });
 
-describe('buildGraphQLQuery', () => {
+describe('buildGraphQLQueries', () => {
   const buckets = buildWeekBuckets('2026-02-02', '2026-02-15');
+  const fourWeeks = buildWeekBuckets('2026-02-02', '2026-03-01');
+  const sixChunks = Array.from({ length: 6 }, (_, i) => [`dev${i}`]);
+  const searchCount = (query: string) => query.match(/search\(/g)?.length ?? 0;
 
-  it('batches every week and chunk into one document', () => {
-    const query = buildGraphQLQuery(buckets, [['alice'], ['bob']], 'my-org');
+  it('keeps a small team in one document', () => {
+    const queries = buildGraphQLQueries(buckets, [['alice'], ['bob']], 'my-org');
 
-    // 2 buckets x 2 chunks x 3 counts
-    expect(query.match(/search\(/g)).toHaveLength(12);
-    expect(query).toContain(aliasFor(0, 0, 'merged'));
-    expect(query).toContain(aliasFor(1, 1, 'agent'));
-    expect(query).toContain('rateLimit');
+    expect(queries).toHaveLength(1);
+    expect(searchCount(queries[0]!)).toBe(13);
+    expect(queries[0]).toContain(aliasFor(0, 0, 'merged'));
+    expect(queries[0]).toContain(aliasFor(1, 1, 'agent'));
+    expect(queries[0]).toContain('rateLimit');
   });
 
-  it('escapes query strings so the document stays valid GraphQL', () => {
-    const query = buildGraphQLQuery(buckets.slice(0, 1), [['alice']], 'my-org');
+  it('splits large teams into GraphQL documents GitHub can answer', () => {
+    const queries = buildGraphQLQueries(fourWeeks, sixChunks, 'my-org');
+
+    expect(queries.length).toBeGreaterThan(1);
+    expect(queries.reduce((sum, query) => sum + searchCount(query), 0)).toBe(73);
+    for (const query of queries) {
+      expect(searchCount(query)).toBeLessThanOrEqual(MAX_SEARCHES_PER_REQUEST);
+      expect(query).toContain('rateLimit');
+    }
+  });
+
+  it('uses legacy issue search, which ORs repeated qualifiers', () => {
+    const [query] = buildGraphQLQueries(buckets.slice(0, 1), [['alice']], 'my-org');
+
     expect(query).toContain('search(query: "is:pr is:merged');
+    expect(query).toContain('type: ISSUE,');
+    expect(query).not.toContain('ISSUE_ADVANCED');
+  });
+
+  it('probes org-wide pull request visibility once, in the first request', () => {
+    const queries = buildGraphQLQueries(fourWeeks, sixChunks, 'my-org');
+
+    expect(queries[0]).toContain(`${ORG_PR_PROBE_ALIAS}: search(query: "is:pr org:my-org"`);
+    expect(queries.slice(1).some(query => query.includes(ORG_PR_PROBE_ALIAS))).toBe(false);
+  });
+
+  it('skips the probe when no org is known', () => {
+    const [query] = buildGraphQLQueries(buckets, [['alice']], undefined);
+    expect(query).not.toContain(ORG_PR_PROBE_ALIAS);
   });
 });
 
@@ -360,6 +392,50 @@ describe('fetchTeamPrMetrics', () => {
     ));
 
     await expect(fetchTeamPrMetrics(baseRequest)).rejects.toThrow(/Bad credentials/);
+  });
+
+  it('does not turn partial GraphQL errors into zero-count weeks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
+      data: { [aliasFor(0, 0, 'merged')]: { issueCount: 8 } },
+      errors: [{ message: 'Something went wrong while executing your query' }],
+    })));
+
+    await expect(fetchTeamPrMetrics(baseRequest)).rejects.toThrow(/Something went wrong/);
+  });
+
+  it('splits large teams across sequential requests and combines each batch', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      inFlight--;
+      const { query } = JSON.parse(String(init.body)) as { query: string };
+      const aliases = [...query.matchAll(/(\w+): search\(/g)].map(match => match[1]!);
+      return mockResponse({ data: Object.fromEntries(aliases.map(alias => [alias, { issueCount: 1 }])) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const logins = Array.from({ length: 40 }, (_, i) => `developer-login-${i}`);
+    const result = await fetchTeamPrMetrics({ ...baseRequest, logins });
+    const firstBucket = buildWeekBuckets(baseRequest.since, baseRequest.until)[0]!;
+    const chunkCount = chunkLogins(logins, baseQueryLength(firstBucket, 'my-org')).length;
+
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(maxInFlight).toBe(1);
+    expect(result.weeks.every(week => week.merged === chunkCount * 2)).toBe(true);
+  });
+
+  it('reports missing repository access instead of returning empty weeks', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({
+      data: { [ORG_PR_PROBE_ALIAS]: { issueCount: 0 } },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const logins = Array.from({ length: 40 }, (_, i) => `developer-login-${i}`);
+    await expect(fetchTeamPrMetrics({ ...baseRequest, logins })).rejects.toBeInstanceOf(SearchAccessError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns zeroed weeks without calling the API for an empty team', async () => {

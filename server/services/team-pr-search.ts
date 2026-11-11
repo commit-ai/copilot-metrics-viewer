@@ -13,14 +13,22 @@
  * COST CONTROL
  * ------------
  * Every week bucket needs three counts, and member logins must be chunked to
- * respect GitHub's 256-character search query limit. Issuing one HTTP request
- * per (week x chunk x count) would be dozens of calls, so all of them are sent
- * as aliased fields inside a SINGLE GraphQL document. This endpoint is only
- * ever invoked on explicit user action.
+ * respect GitHub's 256-character search query limit. Searches are sent as
+ * aliased fields in small GraphQL documents to avoid GitHub query timeouts.
+ * This endpoint is only ever invoked on explicit user action.
+ *
+ * Search skips repositories the credential cannot read. An org-wide probe
+ * makes a credential with no visible pull requests an actionable error.
  */
 
 /** GitHub search caps query strings at 256 characters. */
 const MAX_SEARCH_QUERY_LENGTH = 256;
+
+/** Keep each GraphQL document below GitHub's practical search timeout. */
+export const MAX_SEARCHES_PER_REQUEST = 24;
+
+/** Org-wide search used to detect when no pull requests are visible. */
+export const ORG_PR_PROBE_ALIAS = 'orgPullRequests';
 
 /**
  * Upper bound on author chunks per request, so a very large team cannot
@@ -80,6 +88,18 @@ export class SearchRateLimitError extends Error {
     super(`GitHub search rate limit exceeded. Retry in ${retryAfterMinutes} minute(s).`);
     this.name = 'SearchRateLimitError';
     this.retryAfterMinutes = retryAfterMinutes;
+  }
+}
+
+/** Thrown when the credential cannot see pull requests in the organization. */
+export class SearchAccessError extends Error {
+  constructor(org: string) {
+    super(
+      `No pull requests in ${org} are visible to the GitHub credential this dashboard uses, so merged PRs cannot be counted. `
+      + "Give that credential read access to the organization's repositories "
+      + '(classic PAT or OAuth scope: repo; fine-grained PAT or GitHub App: Pull requests read-only).'
+    );
+    this.name = 'SearchAccessError';
   }
 }
 
@@ -175,7 +195,10 @@ export function rollingAverage(weeks: WeekPrCounts[]): number {
   return total / considered.length;
 }
 
-/** Repeated qualifiers are OR-ed by GitHub search. */
+/**
+ * Legacy issue search ORs repeated author/assignee qualifiers.
+ * Advanced search would AND them.
+ */
 function qualifierList(qualifier: string, values: string[]): string {
   return values.map(v => `${qualifier}:${v}`).join(' ');
 }
@@ -218,27 +241,32 @@ export function baseQueryLength(bucket: WeekBucket, org: string | undefined): nu
   return buildBucketQueries(bucket, [], org).reviewed.length;
 }
 
+function searchField(alias: string, query: string): string {
+  return `${alias}: search(query: ${JSON.stringify(query)}, type: ISSUE, first: 1) { issueCount }`;
+}
+
 /**
- * Assemble one GraphQL document covering every (week x chunk) combination.
+ * Assemble GraphQL documents covering every (week x chunk) combination.
  * Aliases encode the bucket index, chunk index and which count they carry.
  */
-export function buildGraphQLQuery(buckets: WeekBucket[], chunks: string[][], org: string | undefined): string {
-  const fields: string[] = ['rateLimit { remaining resetAt }'];
-
+export function buildGraphQLQueries(buckets: WeekBucket[], chunks: string[][], org: string | undefined): string[] {
+  const searches: string[] = org ? [searchField(ORG_PR_PROBE_ALIAS, `is:pr org:${org}`)] : [];
   buckets.forEach((bucket, b) => {
     chunks.forEach((chunk, c) => {
       const queries = buildBucketQueries(bucket, chunk, org);
       for (const [kind, query] of Object.entries(queries)) {
-        // `first: 1` because GitHub requires a page size even though only
-        // issueCount is read.
-        fields.push(
-          `${aliasFor(b, c, kind as QueryKind)}: search(query: ${JSON.stringify(query)}, type: ISSUE, first: 1) { issueCount }`
-        );
+        searches.push(searchField(aliasFor(b, c, kind as QueryKind), query));
       }
     });
   });
 
-  return `query {\n  ${fields.join('\n  ')}\n}`;
+  const batchCount = Math.ceil(searches.length / MAX_SEARCHES_PER_REQUEST);
+  const batchSize = Math.ceil(searches.length / batchCount);
+  const documents: string[] = [];
+  for (let i = 0; i < searches.length; i += batchSize) {
+    documents.push(`query {\n  ${['rateLimit { remaining resetAt }', ...searches.slice(i, i + batchSize)].join('\n  ')}\n}`);
+  }
+  return documents;
 }
 
 type QueryKind = 'merged' | 'reviewed' | 'agent';
@@ -336,10 +364,11 @@ export interface TeamPrSearchRequest {
 }
 
 /**
- * Fetch weekly merged/AI-touched PR counts for a team in a single GraphQL
- * round trip.
+ * Fetch weekly merged/AI-touched PR counts for a team in sequential GraphQL
+ * requests.
  *
  * @throws {SearchRateLimitError} when GitHub reports the caller is rate limited
+ * @throws {SearchAccessError} when no pull requests are visible in the org
  */
 export async function fetchTeamPrMetrics(request: TeamPrSearchRequest): Promise<TeamPrMetrics> {
   const { logins, since, until, org, githubToken, apiBaseUrl = 'https://api.github.com' } = request;
@@ -355,28 +384,14 @@ export async function fetchTeamPrMetrics(request: TeamPrSearchRequest): Promise<
   const truncated = allChunks.length > MAX_AUTHOR_CHUNKS;
   const chunks = truncated ? allChunks.slice(0, MAX_AUTHOR_CHUNKS) : allChunks;
 
-  const response = await fetch(`${apiBaseUrl}/graphql`, {
-    method: 'POST',
-    headers: {
-      Authorization: `bearer ${githubToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query: buildGraphQLQuery(buckets, chunks, org) }),
-  });
-
-  const json = await response.json().catch(() => ({})) as GraphQLSearchResponse;
-
-  if (isRateLimited(response.status, json)) {
-    const resetAt = (json.data?.rateLimit as { resetAt?: string } | undefined)?.resetAt;
-    throw new SearchRateLimitError(retryAfterMinutes(response.headers, resetAt));
+  const data: Record<string, unknown> = {};
+  for (const query of buildGraphQLQueries(buckets, chunks, org)) {
+    Object.assign(data, await runSearch(query, githubToken, apiBaseUrl));
+    const probe = data[ORG_PR_PROBE_ALIAS] as { issueCount?: number } | undefined;
+    if (org && probe?.issueCount === 0) throw new SearchAccessError(org);
   }
 
-  if (!response.ok || !json.data) {
-    const detail = json.errors?.map(e => e.message).join('; ') || `HTTP ${response.status}`;
-    throw new Error(`GitHub PR search failed: ${detail}`);
-  }
-
-  const weeks = collectCounts(json.data as Record<string, unknown>, buckets, chunks.length);
+  const weeks = collectCounts(data, buckets, chunks.length);
   const totalMerged = weeks.reduce((sum, w) => sum + w.merged, 0);
 
   return {
@@ -389,6 +404,29 @@ export async function fetchTeamPrMetrics(request: TeamPrSearchRequest): Promise<
     truncated,
     orgScoped: !!org,
   };
+}
+
+async function runSearch(query: string, githubToken: string, apiBaseUrl: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`${apiBaseUrl}/graphql`, {
+    method: 'POST',
+    headers: {
+      Authorization: `bearer ${githubToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query }),
+  });
+  const json = await response.json().catch(() => ({})) as GraphQLSearchResponse;
+
+  if (isRateLimited(response.status, json)) {
+    const resetAt = (json.data?.rateLimit as { resetAt?: string } | undefined)?.resetAt;
+    throw new SearchRateLimitError(retryAfterMinutes(response.headers, resetAt));
+  }
+
+  if (!response.ok || !json.data || (json.errors?.length ?? 0) > 0) {
+    const detail = json.errors?.map(e => e.message).join('; ') || `HTTP ${response.status}`;
+    throw new Error(`GitHub PR search failed: ${detail}`);
+  }
+  return json.data;
 }
 
 function emptyMetrics(buckets: WeekBucket[], memberCount: number, orgScoped: boolean): TeamPrMetrics {
